@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Password Security Meter",
+  "version": "1.0",
+  "description": "Draggable password security analyzer and breach detector",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "identity"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Password Meter"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "lib/zxcvbn.js",
+        "content/content.js"
+      ],
+      "css": ["style/styles.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  }
+}

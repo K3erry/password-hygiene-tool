@@ -1,0 +1,205 @@
+/* Use a unique ID for the main container to avoid collisions */
+#pm-draggable-meter {
+  position: fixed;
+  top: 50px;
+  left: 50px;
+  width: 320px;
+  background: #ffffff !important; /* !important ensures websites can't override this */
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  cursor: move;
+  z-index: 2147483647; /* Use the maximum possible z-index to stay on top of everything */
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: none; 
+  color: #333;
+  line-height: 1.4;
+  transition: box-shadow 0.2s ease; /* Smooth transition for shadow */
+}
+
+/* Dragging state - added for visual feedback */
+#pm-draggable-meter.dragging {
+  opacity: 0.95;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+  cursor: grabbing !important;
+  transition: none; /* Disable transition while dragging for better performance */
+}
+
+.pm-meter-header {
+  background: #4a90e2;
+  color: white !important;
+  padding: 14px 16px;
+  font-weight: 700;
+  border-radius: 10px 10px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: grab; /* Shows grab cursor */
+  transition: background 0.2s ease;
+  -webkit-user-select: none; /* Prevent text selection while dragging */
+  user-select: none;
+}
+
+/* Header hover effect */
+.pm-meter-header:hover {
+  background: #3a7bc8;
+}
+
+/* Active grabbing state */
+.pm-meter-header:active {
+  cursor: grabbing;
+  background: #2a6bb8;
+}
+
+/* Close button should not trigger dragging */
+.pm-close-btn {
+  cursor: pointer !important;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 20px;
+  line-height: 1;
+  transition: background 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.pm-close-btn:active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Meter content */
+.pm-meter-content {
+  padding: 16px;
+  cursor: default; /* Content area doesn't trigger drag */
+}
+
+/* Specificity fix for text colors */
+.pm-rating.pm-good { color: #6bcf7f !important; }
+.pm-rating.pm-strong { color: #4caf50 !important; }
+.pm-rating.pm-fair { color: #ffd93d !important; }
+.pm-rating.pm-weak { color: #ffa726 !important; }
+.pm-rating.pm-very-weak { color: #ff6b6b !important; }
+
+/* Status text */
+.pm-status {
+  font-size: 14px;
+  color: #6c757d;
+  margin: 8px 0;
+  padding: 8px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+/* Details section */
+.pm-details {
+  font-size: 13px;
+  color: #6c757d;
+  line-height: 1.6;
+  margin: 12px 0;
+  padding: 8px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.pm-details p {
+  margin: 5px 0;
+}
+
+.pm-details strong {
+  color: #495057;
+}
+
+/* Reset buttons so they don't inherit website styles */
+.pm-meter-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pm-meter-actions button {
+  all: unset; /* Clears inherited website button styles */
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  transition: all 0.2s ease;
+  background: #f1f3f5;
+  color: #495057;
+}
+
+.pm-meter-actions button:hover {
+  background: #e9ecef;
+  transform: translateY(-1px);
+}
+
+.pm-meter-actions button:active {
+  transform: translateY(0);
+}
+
+.pm-meter-actions .pm-refresh-btn {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.pm-meter-actions .pm-refresh-btn:hover {
+  background: #dee2e6;
+}
+
+.pm-meter-actions .pm-details-btn {
+  background: #4a90e2;
+  color: white;
+}
+
+.pm-meter-actions .pm-details-btn:hover {
+  background: #3a7bc8;
+}
+
+/* Prevent any elements inside the meter from interfering with dragging */
+.pm-draggable-meter * {
+  pointer-events: auto; /* All elements can be clicked */
+}
+
+/* But the header should be the only drag handle */
+.pm-meter-header * {
+  pointer-events: none; /* Icons/text in header don't interfere with dragging */
+}
+
+/* Except the close button - it needs to be clickable */
+.pm-close-btn {
+  pointer-events: auto !important;
+}
+
+/* Mobile/touch optimizations */
+@media (max-width: 768px) {
+  #pm-draggable-meter {
+    width: 280px;
+    max-width: 90vw;
+  }
+  
+  .pm-meter-header {
+    padding: 16px; /* Larger touch target */
+  }
+  
+  .pm-close-btn {
+    padding: 8px 12px; /* Larger touch target */
+    font-size: 24px;
+  }
+  
+  .pm-meter-actions button {
+    padding: 12px; /* Larger touch targets for mobile */
+  }
+}
+
+/* Ensure the meter stays above website content */
+.pm-draggable-meter {
+  contain: content; /* Performance optimization */
+  will-change: left, top; /* Optimize for position changes */
+}
