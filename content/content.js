@@ -66,7 +66,7 @@ async function sha1Hash(password) {
   return hashHex.toUpperCase();
 }
 
-// Check password against HIBP using k-anonymity
+// Check password against HIBP using k-anonymity - FIXED with timeout and better error handling
 async function checkBreach(password) {
   if (!password || password.length === 0) {
     return { isBreached: false, count: 0 };
@@ -83,15 +83,20 @@ async function checkBreach(password) {
     if (breachCache.has(cacheKey)) {
       const suffixes = breachCache.get(cacheKey);
       const isBreached = suffixes.includes(suffix);
-      const count = isBreached ? 1 : 0; // Simplified count
+      const count = isBreached ? 1 : 0;
       return { isBreached, count, hashPrefix: prefix };
     }
     
-    // 3. Fetch from HIBP API (k-anonymity: only send prefix)
+    // 3. Fetch from HIBP API with timeout
     console.log(`🔍 Checking breach for prefix: ${prefix}...`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
     const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
-      headers: { 'User-Agent': 'Password-Hygiene-Analytics-Tool' }
-    });
+      headers: { 'User-Agent': 'Password-Hygiene-Analytics-Tool' },
+      signal: controller.signal
+    }).finally(() => clearTimeout(timeoutId));
     
     if (!response.ok) {
       throw new Error(`HIBP API error: ${response.status}`);
@@ -112,8 +117,13 @@ async function checkBreach(password) {
     return { isBreached, count, hashPrefix: prefix };
     
   } catch (error) {
-    console.error('❌ Breach check failed:', error);
-    return { isBreached: false, count: 0, error: error.message };
+    if (error.name === 'AbortError') {
+      console.error('❌ Breach check timeout');
+      return { isBreached: false, count: 0, error: 'Request timeout' };
+    } else {
+      console.error('❌ Breach check failed:', error);
+      return { isBreached: false, count: 0, error: error.message };
+    }
   }
 }
 
@@ -335,7 +345,7 @@ function createCompleteIndicator(passwordField) {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(async () => {
       await analyzeComplete(passwordField, e.target.value);
-    }, 300); // Wait 300ms after typing stops
+    }, 300);
   });
 }
 
@@ -427,7 +437,6 @@ function makeDraggable(element) {
   
   let isDragging = false;
   let offsetX, offsetY;
-  let startX, startY;
 
   // Mouse events
   header.addEventListener('mousedown', startDrag);
@@ -452,9 +461,6 @@ function makeDraggable(element) {
     offsetX = e.clientX - rect.left;
     offsetY = e.clientY - rect.top;
     
-    startX = e.clientX;
-    startY = e.clientY;
-    
     // Add dragging class
     element.classList.add('dragging');
     
@@ -473,9 +479,6 @@ function makeDraggable(element) {
     const rect = element.getBoundingClientRect();
     offsetX = touch.clientX - rect.left;
     offsetY = touch.clientY - rect.top;
-    
-    startX = touch.clientX;
-    startY = touch.clientY;
     
     element.classList.add('dragging');
     
@@ -628,9 +631,9 @@ async function analyzeComplete(passwordField, password) {
     
     console.log('🔐 zxcvbn analysis:', {
       score: score,
-      crackTime: analysis.crack_times_display.offline_fast_hashing_1e10_per_second,
-      warnings: analysis.feedback.warning,
-      suggestions: analysis.feedback.suggestions
+      crackTime: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown',
+      warnings: analysis.feedback?.warning || '',
+      suggestions: analysis.feedback?.suggestions || []
     });
   } else {
     score = Math.min(4, Math.floor(password.length / 3));
@@ -658,22 +661,10 @@ async function analyzeComplete(passwordField, password) {
   indicator.strengthLabel.style.color = strengthData.color;
   
   indicator.charCount.textContent = `📏 Length: ${password.length} characters`;
-  indicator.crackTime.textContent = `⏱️ Crack time: ${analysis.crack_times_display.offline_fast_hashing_1e10_per_second}`;
   
-  // Show warnings/suggestions
-  if (analysis.feedback.warning) {
-    indicator.warning.textContent = `⚠️ ${analysis.feedback.warning}`;
-    indicator.warning.style.display = 'block';
-  } else {
-    indicator.warning.style.display = 'none';
-  }
-  
-  if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
-    indicator.suggestion.textContent = `💡 ${analysis.feedback.suggestions[0]}`;
-    indicator.suggestion.style.display = 'block';
-  } else {
-    indicator.suggestion.style.display = 'none';
-  }
+  // Crack time with null check
+  const crackTime = analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown';
+  indicator.crackTime.textContent = `⏱️ Crack time: ${crackTime}`;
   
   // 4. Update breach status when check completes
   let breachResult = { isBreached: false, count: 0 };
@@ -706,48 +697,42 @@ async function analyzeComplete(passwordField, password) {
     console.error('Breach check error:', error);
     breachResult.error = error.message;
   }
-     // Safely update draggable meter with analysis
+  
+  // Show warnings/suggestions - with null checks
+  if (analysis && analysis.feedback) {
+    // Handle warning
+    if (analysis.feedback.warning && analysis.feedback.warning !== '') {
+      indicator.warning.textContent = `⚠️ ${analysis.feedback.warning}`;
+      indicator.warning.style.display = 'block';
+    } else {
+      indicator.warning.style.display = 'none';
+    }
+    
+    // Handle suggestions
+    if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
+      indicator.suggestion.textContent = `💡 ${analysis.feedback.suggestions[0]}`;
+      indicator.suggestion.style.display = 'block';
+    } else {
+      indicator.suggestion.style.display = 'none';
+    }
+  } else {
+    indicator.warning.style.display = 'none';
+    indicator.suggestion.style.display = 'none';
+  }
+  
+  // Safely update draggable meter with analysis - FIXED
   try {
-    const meter = document.getElementById('pm-draggable-meter');
-    if (meter && meter.style.display !== 'none') {
+    const meterElement = document.getElementById('pm-draggable-meter');
+    if (meterElement && meterElement.style.display !== 'none') {
       if (typeof updateDraggableMeterWithAnalysis === 'function') {
         updateDraggableMeterWithAnalysis(score, password, breachResult, analysis);
-      } else {
-        console.log('updateDraggableMeterWithAnalysis function not available yet');
       }
     }
   } catch (meterError) {
     console.log('Could not update draggable meter:', meterError);
   }
-  // Update rating
-  const ratingEl = meter.querySelector('.pm-rating');
-  if (ratingEl) {
-    ratingEl.textContent = strengthData.name;
-    ratingEl.className = `pm-rating pm-${strengthData.name.toLowerCase().replace(/ /g, '-')}`;
-  }
-  
-  // Update status
-  const statusEl = meter.querySelector('.pm-status');
-  if (statusEl) {
-    if (breachResult && breachResult.isBreached) {
-      statusEl.textContent = `❌ BREACHED: Found in ${breachResult.count} data breaches`;
-      statusEl.style.color = '#dc3545';
-    } else {
-      statusEl.textContent = '✅ Safe: No breaches found';
-      statusEl.style.color = '#28a745';
-    }
-  }
-  
-  // Update details
-  const detailsEl = meter.querySelector('.pm-details');
-  if (detailsEl) {
-    detailsEl.innerHTML = `
-      <p><strong>Length:</strong> ${password.length} characters</p>
-      <p><strong>Crack time:</strong> ${analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'}</p>
-      <p><strong>Last checked:</strong> ${new Date().toLocaleTimeString()}</p>
-    `;
-  }
 }
+
 function updateDraggableMeterWithAnalysis(score, password, breachResult, analysis) {
   console.log('Updating meter with analysis', {score, password});
   
@@ -781,9 +766,10 @@ function updateDraggableMeterWithAnalysis(score, password, breachResult, analysi
   // Update details
   const detailsEl = meter.querySelector('.pm-details');
   if (detailsEl) {
+    const crackTime = analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown';
     detailsEl.innerHTML = `
       <p><strong>Length:</strong> ${password.length} characters</p>
-      <p><strong>Crack time:</strong> ${analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'}</p>
+      <p><strong>Crack time:</strong> ${crackTime}</p>
       <p><strong>Last checked:</strong> ${new Date().toLocaleTimeString()}</p>
     `;
   }
