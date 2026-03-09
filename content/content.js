@@ -462,11 +462,54 @@ function createCompleteIndicator(passwordField) {
     line-height: 1.5;
   `;
   
+  // ===== NEW: Help button container (only shows for weak/breached passwords) =====
+  const helpButtonContainer = document.createElement('div');
+  helpButtonContainer.style.cssText = `
+    margin-top: 12px;
+    display: none;
+    text-align: center;
+  `;
+  
+  const helpButton = document.createElement('button');
+  helpButton.textContent = '🛟 Get Password Help';
+  helpButton.style.cssText = `
+    background: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.2s ease;
+  `;
+  helpButton.addEventListener('mouseenter', () => {
+    helpButton.style.background = '#3a7bc8';
+  });
+  helpButton.addEventListener('mouseleave', () => {
+    helpButton.style.background = '#4a90e2';
+  });
+  helpButton.addEventListener('click', () => {
+    // Open help page in new tab
+    chrome.runtime.sendMessage({ 
+      action: 'openHelpPage',
+      passwordStrength: 'weak',
+      breached: false
+    });
+    // Fallback if message doesn't work
+    window.open('https://your-extension-help-page.com', '_blank');
+  });
+  
+  helpButtonContainer.appendChild(helpButton);
+  // ===== END NEW =====
+  
   content.appendChild(scoreSection);
   content.appendChild(strengthBar);
   content.appendChild(detailsGrid);
   content.appendChild(breachSection);
   content.appendChild(feedbackSection);
+  content.appendChild(helpButtonContainer);  // Add help button container
   
   container.appendChild(header);
   container.appendChild(content);
@@ -494,7 +537,9 @@ function createCompleteIndicator(passwordField) {
     charCount: charCount.querySelector('span'),
     crackTime: crackTime.querySelector('span'),
     feedbackSection,
-    breachSection
+    breachSection,
+    helpButtonContainer,  // Store reference
+    helpButton            // Store reference
   };
   
   console.log('👂 Attaching input listener to field');
@@ -811,6 +856,26 @@ async function analyzeComplete(passwordField, password) {
     indicator.feedbackSection.style.display = 'none';
   }
   
+  // ===== NEW: Show help button only for weak (score <= 1) or breached passwords =====
+  if (indicator.helpButtonContainer && indicator.helpButton) {
+    if (score <= 1 || breachResult.isBreached) {
+      indicator.helpButtonContainer.style.display = 'block';
+      console.log('🆘 Help button shown - password needs attention');
+      
+      // Update button text based on situation
+      if (breachResult.isBreached && score <= 1) {
+        indicator.helpButton.textContent = '🆘 Password Breached & Weak - Get Help';
+      } else if (breachResult.isBreached) {
+        indicator.helpButton.textContent = '🚨 Password Breached - Get Help';
+      } else if (score <= 1) {
+        indicator.helpButton.textContent = '⚠️ Weak Password - Get Help';
+      }
+    } else {
+      indicator.helpButtonContainer.style.display = 'none';
+    }
+  }
+  // ===== END NEW =====
+  
   try {
     const meterElement = document.getElementById('pm-draggable-meter');
     if (meterElement && meterElement.style.display !== 'none') {
@@ -912,6 +977,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+  
+  // ===== NEW: Handle help page opening =====
+  if (request.action === 'openHelpPage') {
+    // Create help page URL
+    const helpUrl = chrome.runtime.getURL('help.html') + 
+      '?strength=' + (request.passwordStrength || 'weak') +
+      '&breached=' + (request.breached || false);
+    
+    chrome.tabs.create({ url: helpUrl });
+    sendResponse({ success: true });
+    return true;
+  }
+  // ===== END NEW =====
   
   sendResponse({ success: false, error: 'Unknown action' });
   return true;
