@@ -1,26 +1,192 @@
-// popup.js - Main popup logic for Password Meter extension
+// popup.js - Main popup logic with draggable functionality
 
 // DOM Elements
+const container = document.getElementById('popup-container');
+const dragHandle = document.getElementById('drag-handle');
+const minimizeBtn = document.getElementById('minimize-btn');
+const closeBtn = document.getElementById('close-btn');
+const resizeHandle = document.getElementById('resize-handle');
 const toggleMeterBtn = document.getElementById('toggleMeter');
 const checkPageBtn = document.getElementById('checkPage');
 const syncStatusDiv = document.getElementById('syncStatus');
 
-// Show/Hide the meter on current page
+// Draggable functionality
+let isDragging = false;
+let offsetX, offsetY;
+
+dragHandle.addEventListener('mousedown', startDrag);
+dragHandle.addEventListener('touchstart', startDragTouch, { passive: false });
+
+function startDrag(e) {
+  isDragging = true;
+  const rect = container.getBoundingClientRect();
+  offsetX = e.clientX - rect.left;
+  offsetY = e.clientY - rect.top;
+  
+  document.addEventListener('mousemove', drag);
+  document.addEventListener('mouseup', stopDrag);
+  e.preventDefault();
+}
+
+function startDragTouch(e) {
+  isDragging = true;
+  const touch = e.touches[0];
+  const rect = container.getBoundingClientRect();
+  offsetX = touch.clientX - rect.left;
+  offsetY = touch.clientY - rect.top;
+  
+  document.addEventListener('touchmove', dragTouch, { passive: false });
+  document.addEventListener('touchend', stopDrag);
+  e.preventDefault();
+}
+
+function drag(e) {
+  if (!isDragging) return;
+  
+  let newX = e.clientX - offsetX;
+  let newY = e.clientY - offsetY;
+  
+  // Keep within viewport
+  newX = Math.max(0, Math.min(newX, window.innerWidth - container.offsetWidth));
+  newY = Math.max(0, Math.min(newY, window.innerHeight - container.offsetHeight));
+  
+  container.style.position = 'fixed';
+  container.style.left = newX + 'px';
+  container.style.top = newY + 'px';
+}
+
+function dragTouch(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+  
+  const touch = e.touches[0];
+  let newX = touch.clientX - offsetX;
+  let newY = touch.clientY - offsetY;
+  
+  newX = Math.max(0, Math.min(newX, window.innerWidth - container.offsetWidth));
+  newY = Math.max(0, Math.min(newY, window.innerHeight - container.offsetHeight));
+  
+  container.style.position = 'fixed';
+  container.style.left = newX + 'px';
+  container.style.top = newY + 'px';
+}
+
+function stopDrag() {
+  isDragging = false;
+  document.removeEventListener('mousemove', drag);
+  document.removeEventListener('touchmove', dragTouch);
+  document.removeEventListener('mouseup', stopDrag);
+  document.removeEventListener('touchend', stopDrag);
+  
+  // Save position
+  savePosition();
+}
+
+// Resizable functionality
+let isResizing = false;
+let startWidth, startHeight, startX, startY;
+
+resizeHandle.addEventListener('mousedown', startResize);
+resizeHandle.addEventListener('touchstart', startResizeTouch, { passive: false });
+
+function startResize(e) {
+  isResizing = true;
+  startWidth = container.offsetWidth;
+  startHeight = container.offsetHeight;
+  startX = e.clientX;
+  startY = e.clientY;
+  
+  document.addEventListener('mousemove', resize);
+  document.addEventListener('mouseup', stopResize);
+  e.preventDefault();
+}
+
+function startResizeTouch(e) {
+  isResizing = true;
+  const touch = e.touches[0];
+  startWidth = container.offsetWidth;
+  startHeight = container.offsetHeight;
+  startX = touch.clientX;
+  startY = touch.clientY;
+  
+  document.addEventListener('touchmove', resizeTouch, { passive: false });
+  document.addEventListener('touchend', stopResize);
+  e.preventDefault();
+}
+
+function resize(e) {
+  if (!isResizing) return;
+  
+  const newWidth = Math.max(250, startWidth + (e.clientX - startX));
+  const newHeight = Math.max(300, startHeight + (e.clientY - startY));
+  
+  container.style.width = newWidth + 'px';
+}
+
+function resizeTouch(e) {
+  if (!isResizing) return;
+  e.preventDefault();
+  
+  const touch = e.touches[0];
+  const newWidth = Math.max(250, startWidth + (touch.clientX - startX));
+  const newHeight = Math.max(300, startHeight + (touch.clientY - startY));
+  
+  container.style.width = newWidth + 'px';
+}
+
+function stopResize() {
+  isResizing = false;
+  document.removeEventListener('mousemove', resize);
+  document.removeEventListener('touchmove', resizeTouch);
+  document.removeEventListener('mouseup', stopResize);
+  document.removeEventListener('touchend', stopResize);
+}
+
+// Minimize functionality
+minimizeBtn.addEventListener('click', () => {
+  container.classList.toggle('minimized');
+  minimizeBtn.textContent = container.classList.contains('minimized') ? '□' : '−';
+});
+
+// Close functionality
+closeBtn.addEventListener('click', () => {
+  container.style.display = 'none';
+  // You can add a way to reopen later
+});
+
+// Save position to storage
+function savePosition() {
+  const pos = {
+    left: container.style.left,
+    top: container.style.top,
+    width: container.style.width
+  };
+  chrome.storage.local.set({ popupPosition: pos });
+}
+
+// Load saved position
+chrome.storage.local.get(['popupPosition'], (result) => {
+  if (result.popupPosition) {
+    container.style.position = 'fixed';
+    container.style.left = result.popupPosition.left || '50px';
+    container.style.top = result.popupPosition.top || '50px';
+    container.style.width = result.popupPosition.width || '320px';
+  }
+});
+
+// Your existing functionality
 toggleMeterBtn.addEventListener('click', async () => {
   try {
-    // Get the current active tab
     const [tab] = await chrome.tabs.query({ 
       active: true, 
       currentWindow: true 
     });
     
-    // Check if we have permission to access this tab
     if (!tab.url || tab.url.startsWith('chrome://')) {
       alert('Cannot access this page. Try a regular website.');
       return;
     }
     
-    // Send message to content script to toggle the meter
     const response = await chrome.tabs.sendMessage(tab.id, { 
       action: 'toggleMeter' 
     });
@@ -30,7 +196,6 @@ toggleMeterBtn.addEventListener('click', async () => {
   } catch (error) {
     console.error('Error toggling meter:', error);
     
-    // If content script isn't injected, inject it first
     if (error.message.includes('Receiving end does not exist')) {
       await injectContentScript();
       alert('Meter activated! Refresh the page if needed.');
@@ -38,7 +203,6 @@ toggleMeterBtn.addEventListener('click', async () => {
   }
 });
 
-// Check passwords on current page
 checkPageBtn.addEventListener('click', async () => {
   try {
     const [tab] = await chrome.tabs.query({ 
@@ -67,10 +231,8 @@ checkPageBtn.addEventListener('click', async () => {
   }
 });
 
-// Check sync storage status
 async function checkSyncStatus() {
   try {
-    // Check if sync storage is available
     const bytes = await chrome.storage.sync.getBytesInUse(null);
     
     if (bytes === undefined) {
@@ -84,20 +246,12 @@ async function checkSyncStatus() {
       syncStatusDiv.style.color = 'blue';
     }
     
-    // Also check if user is signed in
-    chrome.identity.getProfileUserInfo((userInfo) => {
-      if (userInfo.email) {
-        syncStatusDiv.textContent += ` | Signed in as: ${userInfo.email}`;
-      }
-    });
-    
   } catch (error) {
     syncStatusDiv.textContent = 'Sync: Error checking';
     syncStatusDiv.style.color = 'red';
   }
 }
 
-// Helper function to inject content script if needed
 async function injectContentScript() {
   try {
     const [tab] = await chrome.tabs.query({ 
@@ -107,12 +261,12 @@ async function injectContentScript() {
     
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ['content/content.js']  // Path to content.js
+      files: ['content/content.js']
     });
     
     await chrome.scripting.insertCSS({
       target: { tabId: tab.id },
-      files: ['style/styles.css']  // Fixed: now points to style folder
+      files: ['style/styles.css']
     });
     
     console.log('Content script injected successfully');
@@ -123,14 +277,12 @@ async function injectContentScript() {
   }
 }
 
-// Initialize popup when it opens
+// Initialize
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Password Meter popup loaded');
-  
-  // Check sync status
   checkSyncStatus();
   
-  // Add some visual feedback for buttons
+  // Add visual feedback for buttons
   const buttons = document.querySelectorAll('button');
   buttons.forEach(button => {
     button.addEventListener('mousedown', () => {
@@ -145,28 +297,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Listen for messages from content script or background
+// Listen for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Popup received message:', message);
   
   if (message.type === 'syncUpdate') {
     checkSyncStatus();
   }
-  
-  if (message.type === 'passwordChecked') {
-    // Update popup with password check results if needed
-    console.log('Password check completed:', message.data);
-  }
 });
 
-// Optional: Add keyboard shortcuts
+// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  // Close popup with Escape key
   if (e.key === 'Escape') {
     window.close();
   }
-  
-  // Toggle meter with 'm' key
   if (e.key === 'm' || e.key === 'M') {
     toggleMeterBtn.click();
   }
