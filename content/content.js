@@ -132,113 +132,237 @@ function monitorPasswordFields() {
   setupAutoShowMeter();
 }
 
+function makeDraggable(element, handleSelector = '.indicator-header') {
+  const handle = element.querySelector(handleSelector);
+  if (!handle) {
+    console.error('Drag handle not found');
+    return;
+  }
+  
+  handle.style.cursor = 'grab';
+  let isDragging = false;
+  let offsetX, offsetY;
+  let startX, startY;
+  let wasDragged = false;
+
+  function startDrag(e) {
+    if (e.target.classList.contains('close-btn')) return;
+    
+    e.preventDefault();
+    isDragging = true;
+    wasDragged = false;
+    
+    const rect = element.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    
+    offsetX = clientX - rect.left;
+    offsetY = clientY - rect.top;
+    
+    startX = clientX;
+    startY = clientY;
+    
+    handle.style.cursor = 'grabbing';
+    element.style.transition = 'none';
+    element.classList.add('dragging');
+    
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchmove', dragTouch, { passive: false });
+    document.addEventListener('touchend', stopDrag);
+  }
+
+  function drag(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    
+    if (Math.abs(clientX - startX) > 5 || Math.abs(clientY - startY) > 5) {
+      wasDragged = true;
+    }
+    
+    let newX = clientX - offsetX;
+    let newY = clientY - offsetY;
+    
+    newX = Math.max(0, Math.min(newX, window.innerWidth - element.offsetWidth));
+    newY = Math.max(0, Math.min(newY, window.innerHeight - element.offsetHeight));
+    
+    element.style.left = newX + 'px';
+    element.style.top = newY + 'px';
+    element.style.position = 'fixed';
+  }
+
+  function dragTouch(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    
+    const touch = e.touches[0];
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
+    
+    if (Math.abs(clientX - startX) > 5 || Math.abs(clientY - startY) > 5) {
+      wasDragged = true;
+    }
+    
+    let newX = clientX - offsetX;
+    let newY = clientY - offsetY;
+    
+    newX = Math.max(0, Math.min(newX, window.innerWidth - element.offsetWidth));
+    newY = Math.max(0, Math.min(newY, window.innerHeight - element.offsetHeight));
+    
+    element.style.left = newX + 'px';
+    element.style.top = newY + 'px';
+    element.style.position = 'fixed';
+  }
+
+  function stopDrag() {
+    if (isDragging) {
+      isDragging = false;
+      handle.style.cursor = 'grab';
+      element.style.transition = '';
+      element.classList.remove('dragging');
+      
+      if (wasDragged) {
+        savePosition(element.id, {
+          x: parseInt(element.style.left) || 0,
+          y: parseInt(element.style.top) || 0
+        });
+      }
+    }
+    
+    document.removeEventListener('mousemove', drag);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchmove', dragTouch);
+    document.removeEventListener('touchend', stopDrag);
+  }
+
+  handle.addEventListener('mousedown', startDrag);
+  handle.addEventListener('touchstart', startDrag, { passive: false });
+  
+  function savePosition(id, pos) {
+    const key = id + 'Position';
+    chrome.storage.sync.set({ [key]: pos });
+    console.log(`Saved position for ${id}:`, pos);
+  }
+  
+  chrome.storage.sync.get([element.id + 'Position'], (result) => {
+    const pos = result[element.id + 'Position'];
+    if (pos) {
+      element.style.position = 'fixed';
+      element.style.left = pos.x + 'px';
+      element.style.top = pos.y + 'px';
+    }
+  });
+}
+
 function createCompleteIndicator(passwordField) {
   if (passwordField._phatCompleteIndicator) return;
   
   const container = document.createElement('div');
+  container.id = 'indicator-' + Math.random().toString(36).substr(2, 9);
   container.className = 'phat-complete-indicator';
   container.style.cssText = `
-    position: absolute;
+    position: fixed;
     z-index: 2147483646;
-    width: 280px;
-    padding: 12px;
+    width: 300px;
     background: #ffffff;
-    border-radius: 10px;
+    border-radius: 12px;
     border: 2px solid #e0e0e0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
     display: none;
-    pointer-events: none;
     font-size: 12px;
+    resize: both;
+    overflow: auto;
+    min-width: 280px;
+    min-height: 200px;
+    max-width: 400px;
   `;
   
-  const rect = passwordField.getBoundingClientRect();
-  const isRightSide = rect.left < window.innerWidth / 2;
-  
-  container.style.top = (rect.top + window.scrollY) + 'px';
-  if (isRightSide) {
-    container.style.left = (rect.right + 10) + 'px';
-  } else {
-    container.style.left = (rect.left - 290) + 'px';
-  }
-  
-  setTimeout(() => {
-    const containerRect = container.getBoundingClientRect();
-    if (containerRect.right > window.innerWidth) {
-      container.style.left = (window.innerWidth - containerRect.width - 10) + 'px';
-    }
-    if (containerRect.left < 0) {
-      container.style.left = '10px';
-    }
-  }, 0);
-  
   const header = document.createElement('div');
+  header.className = 'indicator-header';
   header.style.cssText = `
+    background: #4a90e2;
+    color: white;
+    padding: 12px 16px;
+    font-weight: 700;
+    border-radius: 10px 10px 0 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #f0f0f0;
+    cursor: grab;
+    user-select: none;
   `;
   
   const title = document.createElement('div');
   title.style.cssText = `
-    font-size: 13px;
-    font-weight: 700;
-    color: #333;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+    font-size: 14px;
   `;
-  title.innerHTML = '🔒 Password Security';
+  title.innerHTML = '🔒 Password Security Analyzer';
   
-  const scoreBadge = document.createElement('div');
-  scoreBadge.style.cssText = `
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: #e9ecef;
-    color: #495057;
-    min-width: 35px;
-    text-align: center;
+  const closeBtn = document.createElement('span');
+  closeBtn.className = 'close-btn';
+  closeBtn.style.cssText = `
+    cursor: pointer;
+    font-size: 20px;
+    padding: 0 8px;
+    border-radius: 4px;
   `;
-  scoreBadge.textContent = '0/4';
+  closeBtn.innerHTML = '×';
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    container.style.display = 'none';
+  });
   
   header.appendChild(title);
-  header.appendChild(scoreBadge);
+  header.appendChild(closeBtn);
   
-  const strengthSection = document.createElement('div');
-  strengthSection.style.cssText = `
-    margin-bottom: 8px;
-  `;
+  const content = document.createElement('div');
+  content.style.cssText = `padding: 16px;`;
   
-  const strengthHeader = document.createElement('div');
-  strengthHeader.style.cssText = `
+  const scoreSection = document.createElement('div');
+  scoreSection.style.cssText = `
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 4px;
+    margin-bottom: 12px;
   `;
   
-  const strengthLabel = document.createElement('span');
+  const scoreBadge = document.createElement('div');
+  scoreBadge.style.cssText = `
+    font-size: 24px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: #e9ecef;
+    color: #495057;
+  `;
+  scoreBadge.textContent = '0/4';
+  
+  const strengthLabel = document.createElement('div');
   strengthLabel.style.cssText = `
-    font-size: 13px;
+    font-size: 18px;
     font-weight: 600;
     color: #ff6b6b;
   `;
   strengthLabel.textContent = 'Very Weak';
   
-  strengthHeader.appendChild(strengthLabel);
+  scoreSection.appendChild(strengthLabel);
+  scoreSection.appendChild(scoreBadge);
   
   const strengthBar = document.createElement('div');
   strengthBar.style.cssText = `
     width: 100%;
-    height: 6px;
+    height: 8px;
     background: #e9ecef;
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
+    margin-bottom: 16px;
   `;
   
   const strengthFill = document.createElement('div');
@@ -248,80 +372,86 @@ function createCompleteIndicator(passwordField) {
     background: #ff6b6b;
     transition: width 0.3s ease;
   `;
-  
   strengthBar.appendChild(strengthFill);
-  strengthSection.appendChild(strengthHeader);
-  strengthSection.appendChild(strengthBar);
   
-  const details = document.createElement('div');
-  details.style.cssText = `
+  const detailsGrid = document.createElement('div');
+  detailsGrid.style.cssText = `
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    font-size: 11px;
-    color: #6c757d;
-    margin: 6px 0;
+    gap: 12px;
+    margin-bottom: 16px;
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 8px;
   `;
   
   const charCount = document.createElement('div');
-  const charSpan = document.createElement('span');
-  charSpan.id = 'char-count';
-  charSpan.textContent = '0';
-  charCount.innerHTML = '📏 ';
-  charCount.appendChild(charSpan);
+  charCount.style.cssText = `color: #495057;`;
+  charCount.innerHTML = `<strong>📏 Length:</strong> <span id="char-count">0</span>`;
   
   const crackTime = document.createElement('div');
-  const timeSpan = document.createElement('span');
-  timeSpan.id = 'crack-time';
-  timeSpan.textContent = 'instant';
-  crackTime.innerHTML = '⏱️ ';
-  crackTime.appendChild(timeSpan);
+  crackTime.style.cssText = `color: #495057;`;
+  crackTime.innerHTML = `<strong>⏱️ Crack time:</strong> <span id="crack-time">instant</span>`;
   
-  details.appendChild(charCount);
-  details.appendChild(crackTime);
+  detailsGrid.appendChild(charCount);
+  detailsGrid.appendChild(crackTime);
   
   const breachSection = document.createElement('div');
   breachSection.style.cssText = `
-    padding: 6px 8px;
+    padding: 12px;
     background: #f8f9fa;
-    border-radius: 6px;
-    margin: 6px 0;
+    border-radius: 8px;
+    margin-bottom: 12px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 11px;
+    gap: 10px;
+    border-left: 4px solid #6c757d;
   `;
   
   const breachIcon = document.createElement('span');
-  breachIcon.style.fontSize = '14px';
+  breachIcon.style.fontSize = '20px';
   breachIcon.textContent = '⏳';
   
-  const breachText = document.createElement('span');
+  const breachText = document.createElement('div');
   breachText.style.cssText = `
+    font-size: 13px;
     color: #6c757d;
     flex: 1;
   `;
-  breachText.textContent = 'Checking...';
+  breachText.textContent = 'Checking breach status...';
   
   breachSection.appendChild(breachIcon);
   breachSection.appendChild(breachText);
   
-  const feedback = document.createElement('div');
-  feedback.style.cssText = `
-    font-size: 11px;
-    padding: 4px 6px;
-    margin-top: 4px;
-    border-radius: 4px;
+  const feedbackSection = document.createElement('div');
+  feedbackSection.style.cssText = `
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 12px;
     display: none;
+    font-size: 13px;
+    line-height: 1.5;
   `;
   
+  content.appendChild(scoreSection);
+  content.appendChild(strengthBar);
+  content.appendChild(detailsGrid);
+  content.appendChild(breachSection);
+  content.appendChild(feedbackSection);
+  
   container.appendChild(header);
-  container.appendChild(strengthSection);
-  container.appendChild(details);
-  container.appendChild(breachSection);
-  container.appendChild(feedback);
+  container.appendChild(content);
   
   document.body.appendChild(container);
+  
+  const rect = passwordField.getBoundingClientRect();
+  const defaultLeft = Math.min(rect.right + 20, window.innerWidth - 320);
+  const defaultTop = Math.max(rect.top, 0);
+  
+  container.style.left = defaultLeft + 'px';
+  container.style.top = defaultTop + 'px';
+  
+  makeDraggable(container, '.indicator-header');
   
   passwordField._phatCompleteIndicator = {
     container,
@@ -330,29 +460,9 @@ function createCompleteIndicator(passwordField) {
     strengthLabel,
     breachIcon,
     breachText,
-    charCount: charSpan,
-    crackTime: timeSpan,
-    feedback
-  };
-  
-  const updatePosition = () => {
-    const rect = passwordField.getBoundingClientRect();
-    if (rect.width === 0) return;
-    
-    container.style.top = (rect.top + window.scrollY) + 'px';
-    if (isRightSide) {
-      container.style.left = (rect.right + 10) + 'px';
-    } else {
-      container.style.left = (rect.left - 290) + 'px';
-    }
-  };
-  
-  window.addEventListener('scroll', updatePosition, { passive: true });
-  window.addEventListener('resize', updatePosition);
-  
-  passwordField._phatCleanup = () => {
-    window.removeEventListener('scroll', updatePosition);
-    window.removeEventListener('resize', updatePosition);
+    charCount: charCount.querySelector('span'),
+    crackTime: crackTime.querySelector('span'),
+    feedbackSection
   };
   
   let timeoutId;
@@ -365,7 +475,6 @@ function createCompleteIndicator(passwordField) {
   
   const observer = new MutationObserver(() => {
     if (!document.body.contains(passwordField)) {
-      if (passwordField._phatCleanup) passwordField._phatCleanup();
       container.remove();
       observer.disconnect();
     }
@@ -392,37 +501,85 @@ function createDraggableMeter() {
   const meter = document.createElement('div');
   meter.id = 'pm-draggable-meter';
   meter.className = 'pm-draggable-meter';
+  meter.style.cssText = `
+    position: fixed;
+    z-index: 2147483647;
+    width: 320px;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 2px solid #e0e0e0;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    resize: both;
+    overflow: auto;
+    min-width: 280px;
+    min-height: 250px;
+    max-width: 400px;
+  `;
   
   meter.innerHTML = `
-    <div class="pm-meter-header">
-      <span class="pm-meter-title">🔒 Password Security</span>
-      <span class="pm-close-btn" title="Close">×</span>
+    <div class="pm-meter-header" style="
+      background: #4a90e2;
+      color: white;
+      padding: 14px 16px;
+      font-weight: 700;
+      border-radius: 10px 10px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: grab;
+      user-select: none;
+    ">
+      <span style="display: flex; align-items: center; gap: 8px;">
+        <span>🔒</span> Password Security Dashboard
+      </span>
+      <span class="pm-close-btn" style="
+        cursor: pointer;
+        font-size: 24px;
+        padding: 0 8px;
+        border-radius: 4px;
+      " title="Close">×</span>
     </div>
-    <div class="pm-meter-content">
-      <div class="pm-rating pm-good">Good</div>
-      <div class="pm-status">Safe: No breaches found</div>
-      <div class="pm-details">
-        <p><strong>Length:</strong> 9 characters</p>
-        <p><strong>Crack time:</strong> less than a second</p>
-        <p><strong>Last checked:</strong> Just now</p>
+    <div class="pm-meter-content" style="padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div class="pm-rating pm-good" style="font-size: 18px; font-weight: 700;">Good</div>
+        <div style="font-size: 14px; color: #6c757d;">Password Strength</div>
       </div>
-      <div class="pm-meter-actions">
-        <button class="pm-refresh-btn">Refresh Check</button>
-        <button class="pm-details-btn">More Details</button>
+      <div style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+          <span style="font-size: 13px; color: #6c757d;">Security Level</span>
+          <span class="pm-score" style="font-weight: 600;">3/4</span>
+        </div>
+        <div style="width: 100%; height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden;">
+          <div class="pm-strength-fill" style="height: 100%; width: 75%; background: #6bcf7f;"></div>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; background: #f8f9fa; padding: 12px; border-radius: 8px;">
+        <div><strong>📏 Length:</strong> <span class="pm-length">9</span></div>
+        <div><strong>⏱️ Crack time:</strong> <span class="pm-crack-time">less than a second</span></div>
+        <div><strong>🔐 Breach status:</strong> <span class="pm-breach-status" style="color: #28a745;">Safe</span></div>
+        <div><strong>📊 Entropy:</strong> <span class="pm-entropy">28 bits</span></div>
+      </div>
+      <div class="pm-breach-details" style="padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 12px; display: none;">
+        <strong style="color: #dc3545;">⚠️ Breach Details</strong>
+        <p style="margin: 4px 0 0; font-size: 12px;">This password has appeared in data breaches.</p>
+      </div>
+      <div class="pm-feedback" style="padding: 12px; background: #f0fff4; border-radius: 8px; border-left: 4px solid #28a745; margin-bottom: 16px;">
+        <p style="margin: 0; font-size: 13px;">💡 Use a mix of letters, numbers, and symbols.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="pm-refresh-btn" style="flex: 1; padding: 10px; background: #e9ecef; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">↻ Refresh</button>
+        <button class="pm-details-btn" style="flex: 1; padding: 10px; background: #4a90e2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">📋 Details</button>
       </div>
     </div>
   `;
   
   document.body.appendChild(meter);
   
-  makeDraggable(meter);
+  makeDraggable(meter, '.pm-meter-header');
   
   meter.querySelector('.pm-close-btn').addEventListener('click', () => {
     meter.style.display = 'none';
-    chrome.runtime.sendMessage({ 
-      type: 'meterClosed', 
-      timestamp: Date.now() 
-    });
   });
   
   meter.querySelector('.pm-refresh-btn').addEventListener('click', () => {
@@ -430,125 +587,11 @@ function createDraggableMeter() {
   });
   
   meter.querySelector('.pm-details-btn').addEventListener('click', () => {
-    alert('Detailed security report:\n• Password strength analysis\n• Breach history\n• Recommendations\n• Cross-device sync status');
-  });
-  
-  chrome.storage.sync.get(['meterPosition'], (result) => {
-    if (result.meterPosition) {
-      meter.style.left = result.meterPosition.x + 'px';
-      meter.style.top = result.meterPosition.y + 'px';
-    }
+    alert('🔍 Detailed Analysis:\n\n• Password strength based on entropy\n• Pattern detection (dictionary, sequences, repeats)\n• Real-time breach database check\n• k-anonymity privacy protection\n• Character composition analysis');
   });
   
   console.log('📦 Draggable meter widget created');
   return meter;
-}
-
-function makeDraggable(element) {
-  const header = element.querySelector('.pm-meter-header');
-  if (!header) {
-    console.error('Header not found for draggable');
-    return;
-  }
-  
-  console.log('Making meter draggable with header:', header);
-  
-  let isDragging = false;
-  let offsetX, offsetY;
-
-  header.addEventListener('mousedown', startDrag);
-  header.addEventListener('touchstart', startDragTouch, { passive: false });
-  header.addEventListener('dragstart', (e) => e.preventDefault());
-  
-  function startDrag(e) {
-    if (e.target.classList.contains('pm-close-btn')) {
-      console.log('Close button clicked, not dragging');
-      return;
-    }
-    
-    console.log('Starting drag');
-    isDragging = true;
-    
-    const rect = element.getBoundingClientRect();
-    offsetX = e.clientX - rect.left;
-    offsetY = e.clientY - rect.top;
-    
-    element.classList.add('dragging');
-    
-    document.addEventListener('mousemove', drag);
-    document.addEventListener('mouseup', stopDrag);
-    e.preventDefault();
-  }
-
-  function startDragTouch(e) {
-    if (e.target.classList.contains('pm-close-btn')) return;
-    
-    console.log('Starting touch drag');
-    isDragging = true;
-    
-    const touch = e.touches[0];
-    const rect = element.getBoundingClientRect();
-    offsetX = touch.clientX - rect.left;
-    offsetY = touch.clientY - rect.top;
-    
-    element.classList.add('dragging');
-    
-    document.addEventListener('touchmove', dragTouch, { passive: false });
-    document.addEventListener('touchend', stopDrag);
-    e.preventDefault();
-  }
-
-  function drag(e) {
-    if (!isDragging) return;
-    e.preventDefault();
-    
-    let newX = e.clientX - offsetX;
-    let newY = e.clientY - offsetY;
-    
-    newX = Math.max(10, Math.min(newX, window.innerWidth - element.offsetWidth - 10));
-    newY = Math.max(10, Math.min(newY, window.innerHeight - element.offsetHeight - 10));
-    
-    element.style.left = newX + 'px';
-    element.style.top = newY + 'px';
-    
-    savePosition(newX, newY);
-  }
-
-  function dragTouch(e) {
-    if (!isDragging) return;
-    e.preventDefault();
-    
-    const touch = e.touches[0];
-    let newX = touch.clientX - offsetX;
-    let newY = touch.clientY - offsetY;
-    
-    newX = Math.max(10, Math.min(newX, window.innerWidth - element.offsetWidth - 10));
-    newY = Math.max(10, Math.min(newY, window.innerHeight - element.offsetHeight - 10));
-    
-    element.style.left = newX + 'px';
-    element.style.top = newY + 'px';
-    
-    savePosition(newX, newY);
-  }
-
-  function stopDrag() {
-    if (isDragging) {
-      console.log('Stopping drag');
-      isDragging = false;
-      element.classList.remove('dragging');
-    }
-    
-    document.removeEventListener('mousemove', drag);
-    document.removeEventListener('touchmove', dragTouch);
-    document.removeEventListener('mouseup', stopDrag);
-    document.removeEventListener('touchend', stopDrag);
-  }
-
-  function savePosition(x, y) {
-    const pos = { x: x, y: y };
-    chrome.storage.sync.set({ meterPosition: pos });
-    console.log('Saved position:', pos);
-  }
 }
 
 function refreshMeterData() {
@@ -561,17 +604,7 @@ function refreshMeterData() {
     const password = latestField.value;
     
     if (password.length > 0) {
-      analyzeComplete(latestField, password).then(() => {
-        updateMeterWithLatest();
-      });
-    }
-  }
-  
-  const details = meter.querySelector('.pm-details');
-  if (details) {
-    const timestamp = details.querySelector('p:nth-child(3)');
-    if (timestamp) {
-      timestamp.innerHTML = `<strong>Last checked:</strong> ${new Date().toLocaleTimeString()}`;
+      analyzeComplete(latestField, password);
     }
   }
 }
@@ -620,8 +653,9 @@ async function analyzeComplete(passwordField, password) {
   indicator.container.style.display = 'block';
   
   indicator.breachIcon.textContent = '⏳';
-  indicator.breachText.textContent = 'Breach check: Checking...';
+  indicator.breachText.textContent = 'Checking breach status...';
   indicator.breachText.style.color = '#6c757d';
+  indicator.breachSection.style.borderLeftColor = '#6c757d';
   
   let score, analysis;
   if (typeof zxcvbn !== 'undefined') {
@@ -672,55 +706,59 @@ async function analyzeComplete(passwordField, password) {
       indicator.breachIcon.textContent = '🚨';
       indicator.breachText.textContent = `❌ BREACHED: Found in ${breachResult.count} data breaches`;
       indicator.breachText.style.color = '#dc3545';
+      indicator.breachSection.style.borderLeftColor = '#dc3545';
     } else {
       indicator.breachIcon.textContent = '✅';
       indicator.breachText.textContent = '✅ Safe: No breaches found';
       indicator.breachText.style.color = '#28a745';
+      indicator.breachSection.style.borderLeftColor = '#28a745';
     }
     
     if (breachResult.error) {
       indicator.breachIcon.textContent = '⚠️';
       indicator.breachText.textContent = `⚠️ Check failed: ${breachResult.error}`;
       indicator.breachText.style.color = '#ffc107';
+      indicator.breachSection.style.borderLeftColor = '#ffc107';
     }
   } catch (error) {
     indicator.breachIcon.textContent = '⚠️';
     indicator.breachText.textContent = '⚠️ Breach check failed';
-    indicator.breachText.style.color = '#efd78fff';
+    indicator.breachText.style.color = '#ffc107';
+    indicator.breachSection.style.borderLeftColor = '#ffc107';
     console.error('Breach check error:', error);
     breachResult.error = error.message;
   }
   
   if (analysis && analysis.feedback) {
-    let feedbackText = '';
+    let feedbackHtml = '';
     
     if (analysis.feedback.warning && analysis.feedback.warning !== '') {
-      feedbackText = `⚠️ ${analysis.feedback.warning}`;
+      feedbackHtml += `<div style="color: #dc3545; margin-bottom: 4px;">⚠️ ${analysis.feedback.warning}</div>`;
     }
     
-    if (!feedbackText && analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
-      feedbackText = `💡 ${analysis.feedback.suggestions[0]}`;
+    if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
+      feedbackHtml += '<div style="color: #28a745;">💡 Suggestions:</div><ul style="margin: 4px 0 0 16px; color: #28a745;">';
+      analysis.feedback.suggestions.forEach(suggestion => {
+        feedbackHtml += `<li style="font-size: 12px;">${suggestion}</li>`;
+      });
+      feedbackHtml += '</ul>';
     }
     
-    if (feedbackText) {
-      indicator.feedback.textContent = feedbackText;
-      indicator.feedback.style.display = 'block';
-      indicator.feedback.style.background = feedbackText.includes('⚠️') ? '#fff5f5' : '#f0fff4';
-      indicator.feedback.style.color = feedbackText.includes('⚠️') ? '#dc3545' : '#28a745';
-      indicator.feedback.style.borderLeft = feedbackText.includes('⚠️') ? '3px solid #dc3545' : '3px solid #28a745';
+    if (feedbackHtml) {
+      indicator.feedbackSection.innerHTML = feedbackHtml;
+      indicator.feedbackSection.style.display = 'block';
+      indicator.feedbackSection.style.background = analysis.feedback.warning ? '#fff5f5' : '#f0fff4';
     } else {
-      indicator.feedback.style.display = 'none';
+      indicator.feedbackSection.style.display = 'none';
     }
   } else {
-    indicator.feedback.style.display = 'none';
+    indicator.feedbackSection.style.display = 'none';
   }
   
   try {
     const meterElement = document.getElementById('pm-draggable-meter');
     if (meterElement && meterElement.style.display !== 'none') {
-      if (typeof updateDraggableMeterWithAnalysis === 'function') {
-        updateDraggableMeterWithAnalysis(score, password, breachResult, analysis);
-      }
+      updateDraggableMeterWithAnalysis(score, password, breachResult, analysis);
     }
   } catch (meterError) {
     console.log('Could not update draggable meter:', meterError);
@@ -731,39 +769,66 @@ function updateDraggableMeterWithAnalysis(score, password, breachResult, analysi
   console.log('Updating meter with analysis', {score, password});
   
   const meter = document.getElementById('pm-draggable-meter');
-  if (!meter) {
-    console.log('Meter not found, cannot update');
-    return;
-  }
+  if (!meter) return;
   
   const strengthData = getStrengthData(score);
   
   const ratingEl = meter.querySelector('.pm-rating');
   if (ratingEl) {
     ratingEl.textContent = strengthData.name;
-    ratingEl.className = `pm-rating pm-${strengthData.name.toLowerCase().replace(/ /g, '-')}`;
     ratingEl.style.color = strengthData.color;
   }
   
-  const statusEl = meter.querySelector('.pm-status');
-  if (statusEl) {
+  const scoreEl = meter.querySelector('.pm-score');
+  if (scoreEl) scoreEl.textContent = `${score}/4`;
+  
+  const fillEl = meter.querySelector('.pm-strength-fill');
+  if (fillEl) {
+    fillEl.style.width = ((score + 1) * 20) + '%';
+    fillEl.style.background = strengthData.color;
+  }
+  
+  const lengthEl = meter.querySelector('.pm-length');
+  if (lengthEl) lengthEl.textContent = password.length;
+  
+  const crackTimeEl = meter.querySelector('.pm-crack-time');
+  if (crackTimeEl) {
+    crackTimeEl.textContent = analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown';
+  }
+  
+  const breachStatusEl = meter.querySelector('.pm-breach-status');
+  if (breachStatusEl) {
     if (breachResult && breachResult.isBreached) {
-      statusEl.textContent = `❌ BREACHED: Found in ${breachResult.count} data breaches`;
-      statusEl.style.color = '#dc3545';
+      breachStatusEl.textContent = 'BREACHED!';
+      breachStatusEl.style.color = '#dc3545';
     } else {
-      statusEl.textContent = '✅ Safe: No breaches found';
-      statusEl.style.color = '#28a745';
+      breachStatusEl.textContent = 'Safe';
+      breachStatusEl.style.color = '#28a745';
     }
   }
   
-  const detailsEl = meter.querySelector('.pm-details');
-  if (detailsEl) {
-    const crackTime = analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown';
-    detailsEl.innerHTML = `
-      <p><strong>Length:</strong> ${password.length} characters</p>
-      <p><strong>Crack time:</strong> ${crackTime}</p>
-      <p><strong>Last checked:</strong> ${new Date().toLocaleTimeString()}</p>
-    `;
+  const entropyEl = meter.querySelector('.pm-entropy');
+  if (entropyEl && analysis) {
+    const entropy = Math.log2(Math.pow(10, analysis.guesses_log10 || 0)).toFixed(1);
+    entropyEl.textContent = entropy + ' bits';
+  }
+  
+  const breachDetailsEl = meter.querySelector('.pm-breach-details');
+  if (breachDetailsEl) {
+    breachDetailsEl.style.display = breachResult?.isBreached ? 'block' : 'none';
+  }
+  
+  const feedbackEl = meter.querySelector('.pm-feedback');
+  if (feedbackEl && analysis?.feedback) {
+    if (analysis.feedback.warning) {
+      feedbackEl.innerHTML = `<p style="margin: 0; font-size: 13px;">⚠️ ${analysis.feedback.warning}</p>`;
+      feedbackEl.style.background = '#fff5f5';
+      feedbackEl.style.borderLeftColor = '#dc3545';
+    } else if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
+      feedbackEl.innerHTML = `<p style="margin: 0; font-size: 13px;">💡 ${analysis.feedback.suggestions[0]}</p>`;
+      feedbackEl.style.background = '#f0fff4';
+      feedbackEl.style.borderLeftColor = '#28a745';
+    }
   }
 }
 
@@ -775,57 +840,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     if (meter) {
       meter.style.display = meter.style.display === 'none' ? 'block' : 'none';
-      const isVisible = meter.style.display !== 'none';
-      
-      sendResponse({ 
-        success: true, 
-        visible: isVisible,
-        message: isVisible ? 'Meter shown' : 'Meter hidden'
-      });
+      sendResponse({ success: true, visible: meter.style.display !== 'none' });
     } else {
       meter = createDraggableMeter();
       meter.style.display = 'block';
-      sendResponse({ 
-        success: true, 
-        visible: true,
-        message: 'Meter created and shown'
-      });
+      sendResponse({ success: true, visible: true });
     }
     return true;
   }
   
   if (request.action === 'checkPasswords') {
     const passwordFields = findPasswordFields();
-    const found = passwordFields.length > 0;
-    
-    const fieldInfo = Array.from(passwordFields).map((field, index) => ({
-      id: field.id || `password-${index}`,
-      name: field.name || 'unnamed',
-      placeholder: field.placeholder || 'No placeholder',
-      valueLength: field.value ? field.value.length : 0,
-      hasIndicator: !!field._phatCompleteIndicator
-    }));
-    
     sendResponse({
       success: true,
-      found: found,
-      count: passwordFields.length,
-      fields: fieldInfo,
-      page: window.location.href,
-      timestamp: Date.now()
-    });
-    return true;
-  }
-  
-  if (request.action === 'getMeterStatus') {
-    const meter = document.getElementById('pm-draggable-meter');
-    sendResponse({
-      exists: !!meter,
-      visible: meter ? meter.style.display !== 'none' : false,
-      position: meter ? {
-        x: parseInt(meter.style.left) || 50,
-        y: parseInt(meter.style.top) || 50
-      } : null
+      found: passwordFields.length > 0,
+      count: passwordFields.length
     });
     return true;
   }
