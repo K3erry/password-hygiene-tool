@@ -465,13 +465,23 @@ function createCompleteIndicator(passwordField) {
     feedbackSection
   };
   
-  let timeoutId;
-  passwordField.addEventListener('input', function(e) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(async () => {
-      await analyzeComplete(passwordField, e.target.value);
-    }, 300);
-  });
+  // Remove any existing listeners first
+passwordField.removeEventListener('input', handlePasswordInput);
+passwordField.removeEventListener('keyup', handlePasswordInput);
+
+// Define the handler function
+function handlePasswordInput(e) {
+  clearTimeout(passwordField._inputTimeout);
+  passwordField._inputTimeout = setTimeout(async () => {
+    console.log('🔄 Input detected, analyzing:', e.target.value);
+    await analyzeComplete(passwordField, e.target.value);
+  }, 300);
+}
+
+// Add the new listener
+passwordField.addEventListener('input', handlePasswordInput);
+passwordField.addEventListener('keyup', handlePasswordInput); // Backup for some browsers
+passwordField._inputHandler = handlePasswordInput; // Store for removal
   
   const observer = new MutationObserver(() => {
     if (!document.body.contains(passwordField)) {
