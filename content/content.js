@@ -117,27 +117,41 @@ function findPasswordFields() {
 }
 
 function monitorPasswordFields() {
+  console.log('🔍 Scanning for password fields...');
   const passwordFields = findPasswordFields();
   
   console.log(`🎯 Found ${passwordFields.length} password field(s)`);
   
-  passwordFields.forEach(field => {
+  if (passwordFields.length === 0) {
+    console.log('⚠️ No password fields found on this page');
+    return;
+  }
+  
+  passwordFields.forEach((field, index) => {
+    console.log(`📋 Field ${index}:`, field.id || field.name || 'unnamed field');
+    
     if (!indicators.has(field)) {
-      console.log(`👁️ Monitoring password field`);
+      console.log(`👁️ Creating indicator for field ${index}`);
       createCompleteIndicator(field);
       indicators.set(field, true);
+      console.log(`✅ Indicator created and stored for field ${index}`);
+    } else {
+      console.log(`👁️ Indicator already exists for field ${index}`);
     }
   });
   
+  console.log('🔄 Setting up auto-show meter');
   setupAutoShowMeter();
 }
 
 function makeDraggable(element, handleSelector = '.indicator-header') {
   const handle = element.querySelector(handleSelector);
   if (!handle) {
-    console.error('Drag handle not found');
+    console.error('❌ Drag handle not found for element:', element);
     return;
   }
+  
+  console.log('🎯 Making element draggable with handle:', handle);
   
   handle.style.cursor = 'grab';
   let isDragging = false;
@@ -146,15 +160,21 @@ function makeDraggable(element, handleSelector = '.indicator-header') {
   let wasDragged = false;
 
   function startDrag(e) {
-    if (e.target.classList.contains('close-btn')) return;
+    if (e.target.classList.contains('close-btn') || e.target.classList.contains('pm-close-btn')) {
+      console.log('🚫 Close button clicked, not dragging');
+      return;
+    }
     
     e.preventDefault();
+    e.stopPropagation();
     isDragging = true;
     wasDragged = false;
     
     const rect = element.getBoundingClientRect();
     const clientX = e.clientX || (e.touches && e.touches[0].clientX);
     const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    
+    if (!clientX || !clientY) return;
     
     offsetX = clientX - rect.left;
     offsetY = clientY - rect.top;
@@ -170,6 +190,8 @@ function makeDraggable(element, handleSelector = '.indicator-header') {
     document.addEventListener('mouseup', stopDrag);
     document.addEventListener('touchmove', dragTouch, { passive: false });
     document.addEventListener('touchend', stopDrag);
+    
+    console.log('👉 Drag started');
   }
 
   function drag(e) {
@@ -229,6 +251,7 @@ function makeDraggable(element, handleSelector = '.indicator-header') {
           x: parseInt(element.style.left) || 0,
           y: parseInt(element.style.top) || 0
         });
+        console.log('💾 Drag stopped, position saved');
       }
     }
     
@@ -244,7 +267,6 @@ function makeDraggable(element, handleSelector = '.indicator-header') {
   function savePosition(id, pos) {
     const key = id + 'Position';
     chrome.storage.sync.set({ [key]: pos });
-    console.log(`Saved position for ${id}:`, pos);
   }
   
   chrome.storage.sync.get([element.id + 'Position'], (result) => {
@@ -253,12 +275,18 @@ function makeDraggable(element, handleSelector = '.indicator-header') {
       element.style.position = 'fixed';
       element.style.left = pos.x + 'px';
       element.style.top = pos.y + 'px';
+      console.log('📌 Loaded saved position for', element.id);
     }
   });
 }
 
 function createCompleteIndicator(passwordField) {
-  if (passwordField._phatCompleteIndicator) return;
+  console.log('🔧 createCompleteIndicator called for field:', passwordField);
+  
+  if (passwordField._phatCompleteIndicator) {
+    console.log('⚠️ Indicator already exists, returning');
+    return;
+  }
   
   const container = document.createElement('div');
   container.id = 'indicator-' + Math.random().toString(36).substr(2, 9);
@@ -317,6 +345,7 @@ function createCompleteIndicator(passwordField) {
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     container.style.display = 'none';
+    console.log('❌ Indicator closed by user');
   });
   
   header.appendChild(title);
@@ -443,6 +472,7 @@ function createCompleteIndicator(passwordField) {
   container.appendChild(content);
   
   document.body.appendChild(container);
+  console.log('✅ Indicator container created with ID:', container.id);
   
   const rect = passwordField.getBoundingClientRect();
   const defaultLeft = Math.min(rect.right + 20, window.innerWidth - 320);
@@ -450,6 +480,7 @@ function createCompleteIndicator(passwordField) {
   
   container.style.left = defaultLeft + 'px';
   container.style.top = defaultTop + 'px';
+  container.style.display = 'none';
   
   makeDraggable(container, '.indicator-header');
   
@@ -462,29 +493,33 @@ function createCompleteIndicator(passwordField) {
     breachText,
     charCount: charCount.querySelector('span'),
     crackTime: crackTime.querySelector('span'),
-    feedbackSection
+    feedbackSection,
+    breachSection
   };
   
+  console.log('👂 Attaching input listener to field');
+  
   // Remove any existing listeners first
-passwordField.removeEventListener('input', handlePasswordInput);
-passwordField.removeEventListener('keyup', handlePasswordInput);
-
-// Define the handler function
-function handlePasswordInput(e) {
-  clearTimeout(passwordField._inputTimeout);
-  passwordField._inputTimeout = setTimeout(async () => {
-    console.log('🔄 Input detected, analyzing:', e.target.value);
-    await analyzeComplete(passwordField, e.target.value);
-  }, 300);
-}
-
-// Add the new listener
-passwordField.addEventListener('input', handlePasswordInput);
-passwordField.addEventListener('keyup', handlePasswordInput); // Backup for some browsers
-passwordField._inputHandler = handlePasswordInput; // Store for removal
+  if (passwordField._inputHandler) {
+    passwordField.removeEventListener('input', passwordField._inputHandler);
+  }
+  
+  // Define and store the handler
+  passwordField._inputHandler = function(e) {
+    console.log('⌨️ Input event detected, value:', e.target.value);
+    clearTimeout(passwordField._inputTimeout);
+    passwordField._inputTimeout = setTimeout(async () => {
+      console.log('⏰ Timeout triggered, analyzing:', e.target.value);
+      await analyzeComplete(passwordField, e.target.value);
+    }, 300);
+  };
+  
+  passwordField.addEventListener('input', passwordField._inputHandler);
+  console.log('✅ Input listener attached successfully');
   
   const observer = new MutationObserver(() => {
     if (!document.body.contains(passwordField)) {
+      console.log('🗑️ Password field removed, cleaning up indicator');
       container.remove();
       observer.disconnect();
     }
@@ -508,6 +543,8 @@ function createDraggableMeter() {
     return document.getElementById('pm-draggable-meter');
   }
   
+  console.log('📦 Creating draggable meter');
+  
   const meter = document.createElement('div');
   meter.id = 'pm-draggable-meter';
   meter.className = 'pm-draggable-meter';
@@ -525,6 +562,7 @@ function createDraggableMeter() {
     min-width: 280px;
     min-height: 250px;
     max-width: 400px;
+    display: none;
   `;
   
   meter.innerHTML = `
@@ -590,9 +628,11 @@ function createDraggableMeter() {
   
   meter.querySelector('.pm-close-btn').addEventListener('click', () => {
     meter.style.display = 'none';
+    console.log('❌ Meter closed by user');
   });
   
   meter.querySelector('.pm-refresh-btn').addEventListener('click', () => {
+    console.log('🔄 Refresh button clicked');
     refreshMeterData();
   });
   
@@ -617,10 +657,6 @@ function refreshMeterData() {
       analyzeComplete(latestField, password);
     }
   }
-}
-
-function updateMeterWithLatest() {
-  console.log('🔄 Updating meter with latest analysis...');
 }
 
 function setupAutoShowMeter() {
@@ -652,14 +688,23 @@ function showMeterOnInput(e) {
 }
 
 async function analyzeComplete(passwordField, password) {
+  console.log('🔍 analyzeComplete called with password:', password);
+  
   const indicator = passwordField._phatCompleteIndicator;
-  if (!indicator) return;
+  if (!indicator) {
+    console.error('❌ No indicator found for field');
+    return;
+  }
+  
+  console.log('✅ Indicator found, container ID:', indicator.container.id);
   
   if (password.length === 0) {
+    console.log('📪 Password empty, hiding indicator');
     indicator.container.style.display = 'none';
     return;
   }
   
+  console.log('📊 Processing password, showing indicator');
   indicator.container.style.display = 'block';
   
   indicator.breachIcon.textContent = '⏳';
@@ -674,11 +719,10 @@ async function analyzeComplete(passwordField, password) {
     
     console.log('🔐 zxcvbn analysis:', {
       score: score,
-      crackTime: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown',
-      warnings: analysis.feedback?.warning || '',
-      suggestions: analysis.feedback?.suggestions || []
+      crackTime: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'
     });
   } else {
+    console.warn('⚠️ zxcvbn not available, using fallback');
     score = Math.min(4, Math.floor(password.length / 3));
     analysis = { 
       crack_times_display: { offline_fast_hashing_1e10_per_second: 'unknown' },
@@ -717,11 +761,13 @@ async function analyzeComplete(passwordField, password) {
       indicator.breachText.textContent = `❌ BREACHED: Found in ${breachResult.count} data breaches`;
       indicator.breachText.style.color = '#dc3545';
       indicator.breachSection.style.borderLeftColor = '#dc3545';
+      console.log('🚨 Password breached!');
     } else {
       indicator.breachIcon.textContent = '✅';
       indicator.breachText.textContent = '✅ Safe: No breaches found';
       indicator.breachText.style.color = '#28a745';
       indicator.breachSection.style.borderLeftColor = '#28a745';
+      console.log('✅ Password safe');
     }
     
     if (breachResult.error) {
@@ -776,8 +822,6 @@ async function analyzeComplete(passwordField, password) {
 }
 
 function updateDraggableMeterWithAnalysis(score, password, breachResult, analysis) {
-  console.log('Updating meter with analysis', {score, password});
-  
   const meter = document.getElementById('pm-draggable-meter');
   if (!meter) return;
   
@@ -873,7 +917,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-console.log("🔍 Scanning for password fields...");
+// Initialization
+console.log("🔍 Starting initialization...");
 monitorPasswordFields();
 
 chrome.storage.sync.get(['autoShowMeter'], (result) => {
@@ -891,12 +936,16 @@ observer.observe(document.body, { childList: true, subtree: true });
 setTimeout(monitorPasswordFields, 1000);
 
 setTimeout(() => {
+  console.log('🔍 Final check:');
   const meter = document.getElementById('pm-draggable-meter');
   if (meter) {
-    console.log('Meter exists, header:', meter.querySelector('.pm-meter-header'));
-    console.log('Draggable function exists:', typeof makeDraggable === 'function');
+    console.log('✅ Meter exists');
   }
-}, 2000);
+  const fields = findPasswordFields();
+  console.log(`📊 Total password fields: ${fields.length}`);
+  fields.forEach((field, i) => {
+    console.log(`📋 Field ${i} has indicator:`, !!field._phatCompleteIndicator);
+  });
+}, 3000);
 
 console.log("✅ Complete password analyzer active!");
-console.log("📦 Draggable meter system ready!");
