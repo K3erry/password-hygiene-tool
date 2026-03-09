@@ -5,31 +5,26 @@ function getBrowserInfo() {
   let browser = "Unknown";
   let version = "Unknown";
   
-  // Brave detection (Brave has 'Brave' in userAgent)
   if (userAgent.includes('Brave')) {
     browser = "Brave";
     const match = userAgent.match(/Brave\/(\d+)/);
     version = match ? match[1] : "Unknown";
   }
-  // Chrome detection
   else if (userAgent.includes('Chrome') && !userAgent.includes('Edg') && !userAgent.includes('OPR')) {
     browser = "Chrome";
     const match = userAgent.match(/Chrome\/(\d+)/);
     version = match ? match[1] : "Unknown";
   }
-  // Edge detection
   else if (userAgent.includes('Edg')) {
     browser = "Edge";
     const match = userAgent.match(/Edg\/(\d+)/);
     version = match ? match[1] : "Unknown";
   }
-  // Firefox detection
   else if (userAgent.includes('Firefox')) {
     browser = "Firefox";
     const match = userAgent.match(/Firefox\/(\d+)/);
     version = match ? match[1] : "Unknown";
   }
-  // Safari detection
   else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
     browser = "Safari";
     const match = userAgent.match(/Version\/(\d+)/);
@@ -43,7 +38,6 @@ const browserInfo = getBrowserInfo();
 console.log(`🌐 Running on: ${browserInfo.browser} v${browserInfo.version}`);
 console.log(`📱 User Agent: ${browserInfo.userAgent}`);
 
-// Log extension API availability
 console.log("🔧 Extension APIs:");
 console.log("  - chrome API:", typeof chrome !== 'undefined' ? "Available ✅" : "Missing ❌");
 console.log("  - browser API:", typeof browser !== 'undefined' ? "Available ✅" : "Missing ❌");
@@ -54,9 +48,8 @@ console.log("✅ Password Hygiene Analytics Tool: Content script loaded!");
 console.log("📦 zxcvbn available:", typeof zxcvbn !== 'undefined');
 
 const indicators = new WeakMap();
-const breachCache = new Map(); // Cache for API responses
+const breachCache = new Map();
 
-// SHA-1 hashing function (for k-anonymity)
 async function sha1Hash(password) {
   const encoder = new TextEncoder();
   const data = encoder.encode(password);
@@ -66,28 +59,23 @@ async function sha1Hash(password) {
   return hashHex.toUpperCase();
 }
 
-// Check password against HIBP using k-anonymity - FIXED with timeout and better error handling
 async function checkBreach(password) {
   if (!password || password.length === 0) {
     return { isBreached: false, count: 0 };
   }
   
   try {
-    // 1. Create SHA-1 hash locally
     const hash = await sha1Hash(password);
     const prefix = hash.substring(0, 5);
     const suffix = hash.substring(5);
     
-    // 2. Check cache first
     const cacheKey = prefix;
     if (breachCache.has(cacheKey)) {
       const suffixes = breachCache.get(cacheKey);
       const isBreached = suffixes.includes(suffix);
-      const count = isBreached ? 1 : 0;
-      return { isBreached, count, hashPrefix: prefix };
+      return { isBreached, count: isBreached ? 1 : 0, hashPrefix: prefix };
     }
     
-    // 3. Fetch from HIBP API with timeout
     console.log(`🔍 Checking breach for prefix: ${prefix}...`);
     
     const controller = new AbortController();
@@ -105,10 +93,7 @@ async function checkBreach(password) {
     const text = await response.text();
     const suffixes = text.split('\r\n').map(line => line.split(':')[0]);
     
-    // 4. Cache the result
     breachCache.set(cacheKey, suffixes);
-    
-    // 5. Check if our hash suffix is in the list
     const isBreached = suffixes.includes(suffix);
     const count = isBreached ? 1 : 0;
     
@@ -144,62 +129,79 @@ function monitorPasswordFields() {
     }
   });
   
-  // Setup auto-show for draggable meter
   setupAutoShowMeter();
 }
 
 function createCompleteIndicator(passwordField) {
-  // Create indicator container
+  if (passwordField._phatCompleteIndicator) return;
+  
   const container = document.createElement('div');
   container.className = 'phat-complete-indicator';
   container.style.cssText = `
-    margin-top: 12px;
-    padding: 14px;
+    position: absolute;
+    z-index: 2147483646;
+    width: 280px;
+    padding: 12px;
     background: #ffffff;
     border-radius: 10px;
     border: 2px solid #e0e0e0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    max-width: 350px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
     display: none;
+    pointer-events: none;
+    font-size: 12px;
   `;
   
-  // Header
+  const rect = passwordField.getBoundingClientRect();
+  const isRightSide = rect.left < window.innerWidth / 2;
+  
+  container.style.top = (rect.top + window.scrollY) + 'px';
+  if (isRightSide) {
+    container.style.left = (rect.right + 10) + 'px';
+  } else {
+    container.style.left = (rect.left - 290) + 'px';
+  }
+  
+  setTimeout(() => {
+    const containerRect = container.getBoundingClientRect();
+    if (containerRect.right > window.innerWidth) {
+      container.style.left = (window.innerWidth - containerRect.width - 10) + 'px';
+    }
+    if (containerRect.left < 0) {
+      container.style.left = '10px';
+    }
+  }, 0);
+  
   const header = document.createElement('div');
   header.style.cssText = `
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
     border-bottom: 1px solid #f0f0f0;
   `;
   
   const title = document.createElement('div');
   title.style.cssText = `
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 700;
     color: #333;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
   `;
-  
-  const lockIcon = document.createElement('span');
-  lockIcon.textContent = '🔒';
-  
-  title.appendChild(lockIcon);
-  title.appendChild(document.createTextNode('Password Security'));
+  title.innerHTML = '🔒 Password Security';
   
   const scoreBadge = document.createElement('div');
   scoreBadge.style.cssText = `
-    font-size: 14px;
+    font-size: 11px;
     font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 15px;
+    padding: 2px 8px;
+    border-radius: 12px;
     background: #e9ecef;
     color: #495057;
-    min-width: 50px;
+    min-width: 35px;
     text-align: center;
   `;
   scoreBadge.textContent = '0/4';
@@ -207,29 +209,36 @@ function createCompleteIndicator(passwordField) {
   header.appendChild(title);
   header.appendChild(scoreBadge);
   
-  // Strength section
   const strengthSection = document.createElement('div');
   strengthSection.style.cssText = `
-    margin-bottom: 15px;
+    margin-bottom: 8px;
   `;
   
-  const strengthLabel = document.createElement('div');
+  const strengthHeader = document.createElement('div');
+  strengthHeader.style.cssText = `
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  `;
+  
+  const strengthLabel = document.createElement('span');
   strengthLabel.style.cssText = `
-    font-size: 18px;
-    font-weight: 700;
-    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
     color: #ff6b6b;
   `;
   strengthLabel.textContent = 'Very Weak';
   
+  strengthHeader.appendChild(strengthLabel);
+  
   const strengthBar = document.createElement('div');
   strengthBar.style.cssText = `
     width: 100%;
-    height: 10px;
+    height: 6px;
     background: #e9ecef;
-    border-radius: 5px;
+    border-radius: 3px;
     overflow: hidden;
-    margin-bottom: 8px;
   `;
   
   const strengthFill = document.createElement('div');
@@ -237,95 +246,83 @@ function createCompleteIndicator(passwordField) {
     height: 100%;
     width: 0%;
     background: #ff6b6b;
-    transition: all 0.3s ease;
+    transition: width 0.3s ease;
   `;
   
   strengthBar.appendChild(strengthFill);
+  strengthSection.appendChild(strengthHeader);
+  strengthSection.appendChild(strengthBar);
   
-  // Breach status
+  const details = document.createElement('div');
+  details.style.cssText = `
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    font-size: 11px;
+    color: #6c757d;
+    margin: 6px 0;
+  `;
+  
+  const charCount = document.createElement('div');
+  const charSpan = document.createElement('span');
+  charSpan.id = 'char-count';
+  charSpan.textContent = '0';
+  charCount.innerHTML = '📏 ';
+  charCount.appendChild(charSpan);
+  
+  const crackTime = document.createElement('div');
+  const timeSpan = document.createElement('span');
+  timeSpan.id = 'crack-time';
+  timeSpan.textContent = 'instant';
+  crackTime.innerHTML = '⏱️ ';
+  crackTime.appendChild(timeSpan);
+  
+  details.appendChild(charCount);
+  details.appendChild(crackTime);
+  
   const breachSection = document.createElement('div');
   breachSection.style.cssText = `
-    padding: 10px;
+    padding: 6px 8px;
     background: #f8f9fa;
     border-radius: 6px;
-    margin-bottom: 12px;
+    margin: 6px 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
+    font-size: 11px;
   `;
   
   const breachIcon = document.createElement('span');
-  breachIcon.style.fontSize = '20px';
+  breachIcon.style.fontSize = '14px';
   breachIcon.textContent = '⏳';
   
-  const breachText = document.createElement('div');
+  const breachText = document.createElement('span');
   breachText.style.cssText = `
-    font-size: 13px;
     color: #6c757d;
     flex: 1;
   `;
-  breachText.textContent = 'Breach check: Not checked';
+  breachText.textContent = 'Checking...';
   
   breachSection.appendChild(breachIcon);
   breachSection.appendChild(breachText);
   
-  // Details section
-  const details = document.createElement('div');
-  details.style.cssText = `
-    font-size: 13px;
-    color: #6c757d;
-    line-height: 1.6;
-  `;
-  
-  const charCount = document.createElement('div');
-  charCount.textContent = '📏 Length: 0 characters';
-  
-  const crackTime = document.createElement('div');
-  crackTime.textContent = '⏱️ Crack time: instant';
-  
-  const warning = document.createElement('div');
-  warning.style.cssText = `
-    color: #dc3545;
-    margin-top: 8px;
-    padding: 6px;
-    background: #fff5f5;
+  const feedback = document.createElement('div');
+  feedback.style.cssText = `
+    font-size: 11px;
+    padding: 4px 6px;
+    margin-top: 4px;
     border-radius: 4px;
-    border-left: 3px solid #dc3545;
     display: none;
   `;
-  
-  const suggestion = document.createElement('div');
-  suggestion.style.cssText = `
-    color: #28a745;
-    margin-top: 8px;
-    padding: 6px;
-    background: #f0fff4;
-    border-radius: 4px;
-    border-left: 3px solid #28a745;
-    font-style: italic;
-    display: none;
-  `;
-  
-  details.appendChild(charCount);
-  details.appendChild(crackTime);
-  details.appendChild(warning);
-  details.appendChild(suggestion);
-  
-  // Assemble container
-  strengthSection.appendChild(strengthLabel);
-  strengthSection.appendChild(strengthBar);
   
   container.appendChild(header);
   container.appendChild(strengthSection);
-  container.appendChild(breachSection);
   container.appendChild(details);
+  container.appendChild(breachSection);
+  container.appendChild(feedback);
   
-  // Insert after password field
-  if (passwordField.parentNode) {
-    passwordField.parentNode.insertBefore(container, passwordField.nextSibling);
-  }
+  document.body.appendChild(container);
   
-  // Store references
   passwordField._phatCompleteIndicator = {
     container,
     scoreBadge,
@@ -333,13 +330,31 @@ function createCompleteIndicator(passwordField) {
     strengthLabel,
     breachIcon,
     breachText,
-    charCount,
-    crackTime,
-    warning,
-    suggestion
+    charCount: charSpan,
+    crackTime: timeSpan,
+    feedback
   };
   
-  // Listen for input with debouncing
+  const updatePosition = () => {
+    const rect = passwordField.getBoundingClientRect();
+    if (rect.width === 0) return;
+    
+    container.style.top = (rect.top + window.scrollY) + 'px';
+    if (isRightSide) {
+      container.style.left = (rect.right + 10) + 'px';
+    } else {
+      container.style.left = (rect.left - 290) + 'px';
+    }
+  };
+  
+  window.addEventListener('scroll', updatePosition, { passive: true });
+  window.addEventListener('resize', updatePosition);
+  
+  passwordField._phatCleanup = () => {
+    window.removeEventListener('scroll', updatePosition);
+    window.removeEventListener('resize', updatePosition);
+  };
+  
   let timeoutId;
   passwordField.addEventListener('input', function(e) {
     clearTimeout(timeoutId);
@@ -347,9 +362,17 @@ function createCompleteIndicator(passwordField) {
       await analyzeComplete(passwordField, e.target.value);
     }, 300);
   });
+  
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(passwordField)) {
+      if (passwordField._phatCleanup) passwordField._phatCleanup();
+      container.remove();
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
-// ===== MOVED FUNCTIONS - NOW DEFINED EARLY =====
 function getStrengthData(score) {
   const strengths = [
     { name: 'Very Weak', color: '#ff6b6b' },
@@ -362,7 +385,6 @@ function getStrengthData(score) {
 }
 
 function createDraggableMeter() {
-  // Check if meter already exists
   if (document.getElementById('pm-draggable-meter')) {
     return document.getElementById('pm-draggable-meter');
   }
@@ -371,7 +393,6 @@ function createDraggableMeter() {
   meter.id = 'pm-draggable-meter';
   meter.className = 'pm-draggable-meter';
   
-  // Meter HTML content with updated class names
   meter.innerHTML = `
     <div class="pm-meter-header">
       <span class="pm-meter-title">🔒 Password Security</span>
@@ -394,10 +415,8 @@ function createDraggableMeter() {
   
   document.body.appendChild(meter);
   
-  // Make it draggable
   makeDraggable(meter);
   
-  // Add event listeners
   meter.querySelector('.pm-close-btn').addEventListener('click', () => {
     meter.style.display = 'none';
     chrome.runtime.sendMessage({ 
@@ -414,7 +433,6 @@ function createDraggableMeter() {
     alert('Detailed security report:\n• Password strength analysis\n• Breach history\n• Recommendations\n• Cross-device sync status');
   });
   
-  // Load saved position
   chrome.storage.sync.get(['meterPosition'], (result) => {
     if (result.meterPosition) {
       meter.style.left = result.meterPosition.x + 'px';
@@ -438,17 +456,11 @@ function makeDraggable(element) {
   let isDragging = false;
   let offsetX, offsetY;
 
-  // Mouse events
   header.addEventListener('mousedown', startDrag);
-  
-  // Touch events for mobile
   header.addEventListener('touchstart', startDragTouch, { passive: false });
-  
-  // Prevent text selection while dragging
   header.addEventListener('dragstart', (e) => e.preventDefault());
   
   function startDrag(e) {
-    // Don't drag if clicking close button
     if (e.target.classList.contains('pm-close-btn')) {
       console.log('Close button clicked, not dragging');
       return;
@@ -461,7 +473,6 @@ function makeDraggable(element) {
     offsetX = e.clientX - rect.left;
     offsetY = e.clientY - rect.top;
     
-    // Add dragging class
     element.classList.add('dragging');
     
     document.addEventListener('mousemove', drag);
@@ -494,14 +505,12 @@ function makeDraggable(element) {
     let newX = e.clientX - offsetX;
     let newY = e.clientY - offsetY;
     
-    // Keep within viewport
     newX = Math.max(10, Math.min(newX, window.innerWidth - element.offsetWidth - 10));
     newY = Math.max(10, Math.min(newY, window.innerHeight - element.offsetHeight - 10));
     
     element.style.left = newX + 'px';
     element.style.top = newY + 'px';
     
-    // Save position
     savePosition(newX, newY);
   }
 
@@ -546,7 +555,6 @@ function refreshMeterData() {
   const meter = document.getElementById('pm-draggable-meter');
   if (!meter) return;
   
-  // Get the latest password analysis from your existing system
   const passwordFields = findPasswordFields();
   if (passwordFields.length > 0) {
     const latestField = passwordFields[0];
@@ -554,13 +562,11 @@ function refreshMeterData() {
     
     if (password.length > 0) {
       analyzeComplete(latestField, password).then(() => {
-        // Update meter with the latest analysis
         updateMeterWithLatest();
       });
     }
   }
   
-  // Update timestamp
   const details = meter.querySelector('.pm-details');
   if (details) {
     const timestamp = details.querySelector('p:nth-child(3)');
@@ -571,21 +577,16 @@ function refreshMeterData() {
 }
 
 function updateMeterWithLatest() {
-  // This function would sync the draggable meter with your analyzer's results
   console.log('🔄 Updating meter with latest analysis...');
 }
-// ===== END OF MOVED FUNCTIONS =====
 
-// Auto-show draggable meter when user interacts with password fields
 function setupAutoShowMeter() {
   const passwordFields = findPasswordFields();
   
   passwordFields.forEach(field => {
-    // Remove any existing listeners to avoid duplicates
     field.removeEventListener('focus', showMeterOnFocus);
     field.removeEventListener('input', showMeterOnInput);
     
-    // Add new listeners
     field.addEventListener('focus', showMeterOnFocus);
     field.addEventListener('input', showMeterOnInput);
   });
@@ -618,12 +619,10 @@ async function analyzeComplete(passwordField, password) {
   
   indicator.container.style.display = 'block';
   
-  // Update breach status to "checking"
   indicator.breachIcon.textContent = '⏳';
   indicator.breachText.textContent = 'Breach check: Checking...';
   indicator.breachText.style.color = '#6c757d';
   
-  // 1. Run zxcvbn analysis
   let score, analysis;
   if (typeof zxcvbn !== 'undefined') {
     analysis = zxcvbn(password);
@@ -643,10 +642,8 @@ async function analyzeComplete(passwordField, password) {
     };
   }
   
-  // 2. Run breach check in parallel
   const breachPromise = checkBreach(password);
   
-  // 3. Update strength UI immediately
   const strengthData = getStrengthData(score);
   const widthPercent = (score + 1) * 20;
   
@@ -660,13 +657,11 @@ async function analyzeComplete(passwordField, password) {
   indicator.strengthLabel.textContent = strengthData.name;
   indicator.strengthLabel.style.color = strengthData.color;
   
-  indicator.charCount.textContent = `📏 Length: ${password.length} characters`;
+  indicator.charCount.textContent = password.length;
   
-  // Crack time with null check
   const crackTime = analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown';
-  indicator.crackTime.textContent = `⏱️ Crack time: ${crackTime}`;
+  indicator.crackTime.textContent = crackTime;
   
-  // 4. Update breach status when check completes
   let breachResult = { isBreached: false, count: 0 };
   
   try {
@@ -677,12 +672,10 @@ async function analyzeComplete(passwordField, password) {
       indicator.breachIcon.textContent = '🚨';
       indicator.breachText.textContent = `❌ BREACHED: Found in ${breachResult.count} data breaches`;
       indicator.breachText.style.color = '#dc3545';
-      indicator.container.style.borderColor = '#dc3545';
     } else {
       indicator.breachIcon.textContent = '✅';
       indicator.breachText.textContent = '✅ Safe: No breaches found';
       indicator.breachText.style.color = '#28a745';
-      indicator.container.style.borderColor = strengthData.color;
     }
     
     if (breachResult.error) {
@@ -698,29 +691,30 @@ async function analyzeComplete(passwordField, password) {
     breachResult.error = error.message;
   }
   
-  // Show warnings/suggestions - with null checks
   if (analysis && analysis.feedback) {
-    // Handle warning
+    let feedbackText = '';
+    
     if (analysis.feedback.warning && analysis.feedback.warning !== '') {
-      indicator.warning.textContent = `⚠️ ${analysis.feedback.warning}`;
-      indicator.warning.style.display = 'block';
-    } else {
-      indicator.warning.style.display = 'none';
+      feedbackText = `⚠️ ${analysis.feedback.warning}`;
     }
     
-    // Handle suggestions
-    if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
-      indicator.suggestion.textContent = `💡 ${analysis.feedback.suggestions[0]}`;
-      indicator.suggestion.style.display = 'block';
+    if (!feedbackText && analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
+      feedbackText = `💡 ${analysis.feedback.suggestions[0]}`;
+    }
+    
+    if (feedbackText) {
+      indicator.feedback.textContent = feedbackText;
+      indicator.feedback.style.display = 'block';
+      indicator.feedback.style.background = feedbackText.includes('⚠️') ? '#fff5f5' : '#f0fff4';
+      indicator.feedback.style.color = feedbackText.includes('⚠️') ? '#dc3545' : '#28a745';
+      indicator.feedback.style.borderLeft = feedbackText.includes('⚠️') ? '3px solid #dc3545' : '3px solid #28a745';
     } else {
-      indicator.suggestion.style.display = 'none';
+      indicator.feedback.style.display = 'none';
     }
   } else {
-    indicator.warning.style.display = 'none';
-    indicator.suggestion.style.display = 'none';
+    indicator.feedback.style.display = 'none';
   }
   
-  // Safely update draggable meter with analysis - FIXED
   try {
     const meterElement = document.getElementById('pm-draggable-meter');
     if (meterElement && meterElement.style.display !== 'none') {
@@ -744,14 +738,13 @@ function updateDraggableMeterWithAnalysis(score, password, breachResult, analysi
   
   const strengthData = getStrengthData(score);
   
-  // Update rating
   const ratingEl = meter.querySelector('.pm-rating');
   if (ratingEl) {
     ratingEl.textContent = strengthData.name;
     ratingEl.className = `pm-rating pm-${strengthData.name.toLowerCase().replace(/ /g, '-')}`;
+    ratingEl.style.color = strengthData.color;
   }
   
-  // Update status
   const statusEl = meter.querySelector('.pm-status');
   if (statusEl) {
     if (breachResult && breachResult.isBreached) {
@@ -763,7 +756,6 @@ function updateDraggableMeterWithAnalysis(score, password, breachResult, analysi
     }
   }
   
-  // Update details
   const detailsEl = meter.querySelector('.pm-details');
   if (detailsEl) {
     const crackTime = analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown';
@@ -775,17 +767,13 @@ function updateDraggableMeterWithAnalysis(score, password, breachResult, analysi
   }
 }
 
-// ==================== MESSAGE HANDLING ====================
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📩 Content script received:', request);
   
-  // Handle toggle meter request from popup
   if (request.action === 'toggleMeter') {
     let meter = document.getElementById('pm-draggable-meter');
     
     if (meter) {
-      // Toggle visibility
       meter.style.display = meter.style.display === 'none' ? 'block' : 'none';
       const isVisible = meter.style.display !== 'none';
       
@@ -795,7 +783,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         message: isVisible ? 'Meter shown' : 'Meter hidden'
       });
     } else {
-      // Create new meter
       meter = createDraggableMeter();
       meter.style.display = 'block';
       sendResponse({ 
@@ -807,7 +794,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
-  // Handle password check request
   if (request.action === 'checkPasswords') {
     const passwordFields = findPasswordFields();
     const found = passwordFields.length > 0;
@@ -831,7 +817,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
-  // Handle get status request
   if (request.action === 'getMeterStatus') {
     const meter = document.getElementById('pm-draggable-meter');
     sendResponse({
@@ -849,28 +834,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// Initialization
 console.log("🔍 Scanning for password fields...");
 monitorPasswordFields();
 
-// Check if we should show the draggable meter automatically
 chrome.storage.sync.get(['autoShowMeter'], (result) => {
   if (result.autoShowMeter) {
     createDraggableMeter().style.display = 'block';
   }
 });
 
-// Monitor for dynamic content
 const observer = new MutationObserver(() => {
   monitorPasswordFields();
   setupAutoShowMeter();
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
-// Also check after delay for dynamically loaded pages
 setTimeout(monitorPasswordFields, 1000);
 
-// Debug test for draggable
 setTimeout(() => {
   const meter = document.getElementById('pm-draggable-meter');
   if (meter) {
