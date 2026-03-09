@@ -19,4 +19,4 @@ Browser extension for real-time password strength and breach exposure detection 
 - University of Embu Final Year Project
 - Student: Kere Daniel Ochieng (B141/25371/2022)
 - Supervisor: Dr. Victoria Mukami
-- Date: November 2025.
+- Date: November 2025
