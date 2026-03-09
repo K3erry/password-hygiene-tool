@@ -26,9 +26,12 @@
       "css": ["style/styles.css"],
       "run_at": "document_end"
     }
-    
   ],
   "background": {
     "service_worker": "background/service-worker.js"
-  }
+  },
+  "web_accessible_resources": [{
+    "resources": ["help.html"],
+    "matches": ["<all_urls>"]
+  }]
 }
