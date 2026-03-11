@@ -853,15 +853,6 @@ function showDetailedAnalysis(passwordField) {
   });
 }
 
-function setupAutoShowMeter() {
-  const passwordFields = findPasswordFields();
-  
-  passwordFields.forEach(field => {
-    field.removeEventListener('focus', showMeterOnFocus);
-    field.addEventListener('focus', showMeterOnFocus);
-  });
-}
-
 function showMeterOnFocus() {
   const field = this;
   if (field._passwordMeter) {
