@@ -655,21 +655,85 @@ async function analyzePassword(passwordField, password) {
   
   const breachPromise = checkBreach(password);
   
-  const strengthData = getStrengthData(score);
-  const widthPercent = (score + 1) * 20;
+  // Wait for breach result FIRST
+  let breachResult = { isBreached: false, count: 0 };
   
-  // Update UI
-  meter.strengthLabel.textContent = strengthData.name;
-  meter.strengthLabel.style.color = strengthData.color;
+  try {
+    const result = await breachPromise;
+    breachResult = result;
+  } catch (error) {
+    console.error('Breach check error:', error);
+    breachResult.error = error.message;
+  }
   
-  meter.scoreBadge.textContent = `${score}/4`;
-  meter.scoreBadge.style.background = strengthData.color;
+  // ===== FIX: Override score if password is breached =====
+  // If password is breached, force score to 0 (Very Weak)
+  // Also check for common weak passwords
+  const commonWeakPasswords = [
+    '123456', '12345678', 'password', '123456789', '12345', 
+    '1234567', 'password1', '1234567890', '123123', '0',
+    '111111', 'abc123', 'qwerty', 'admin', 'letmein', 'welcome'
+  ];
+  
+  let finalScore = score;
+  let finalStrengthData = getStrengthData(score);
+  
+  if (breachResult.isBreached) {
+    console.log('🚨 Password breached - forcing score to 0');
+    finalScore = 0;
+    finalStrengthData = getStrengthData(0);
+    
+    // Update feedback message for breached password
+    if (meter.feedbackMessage) {
+      meter.feedbackMessage.textContent = `🚨 CRITICAL: This password has appeared in ${breachResult.count} data breach(es)! Do NOT use this password anywhere.`;
+      meter.feedbackMessage.style.background = '#fff5f5';
+      meter.feedbackMessage.style.borderLeftColor = '#dc3545';
+      meter.feedbackMessage.style.display = 'block';
+    }
+  } 
+  else if (commonWeakPasswords.includes(password.toLowerCase())) {
+    console.log('⚠️ Common weak password detected - forcing score to 0');
+    finalScore = 0;
+    finalStrengthData = getStrengthData(0);
+    
+    // Update feedback message for common weak password
+    if (meter.feedbackMessage) {
+      meter.feedbackMessage.textContent = `⚠️ This is a very common password and is extremely easy to guess. Choose a different, unique password.`;
+      meter.feedbackMessage.style.background = '#fff5f5';
+      meter.feedbackMessage.style.borderLeftColor = '#dc3545';
+      meter.feedbackMessage.style.display = 'block';
+    }
+  }
+  else if (score <= 1) {
+    // Already weak, keep as is
+    if (meter.feedbackMessage) {
+      let feedbackText = '';
+      if (analysis?.feedback?.warning) {
+        feedbackText = `⚠️ ${analysis.feedback.warning}`;
+      } else {
+        feedbackText = '⚠️ This password is too weak. Add more characters, numbers, and symbols.';
+      }
+      meter.feedbackMessage.textContent = feedbackText;
+      meter.feedbackMessage.style.background = '#fff5f5';
+      meter.feedbackMessage.style.borderLeftColor = '#dc3545';
+      meter.feedbackMessage.style.display = 'block';
+    }
+  }
+  
+  const widthPercent = (finalScore + 1) * 20;
+  
+  // Update UI with FINAL score (overridden if breached)
+  meter.strengthLabel.textContent = finalStrengthData.name;
+  meter.strengthLabel.style.color = finalStrengthData.color;
+  
+  meter.scoreBadge.textContent = `${finalScore}/4`;
+  meter.scoreBadge.style.background = finalStrengthData.color;
   meter.scoreBadge.style.color = '#ffffff';
   
-  meter.securityLevelHeader.querySelector('.security-value').textContent = `${score}/4`;
+  meter.securityLevelHeader.querySelector('.security-value').textContent = `${finalScore}/4`;
   
   meter.progressFill.style.width = widthPercent + '%';
-  meter.progressFill.style.background = strengthData.color;
+  meter.progressFill.style.background = finalStrengthData.color;
   
   meter.lengthValue.textContent = password.length;
   
@@ -678,70 +742,61 @@ async function analyzePassword(passwordField, password) {
   let crackTimeDisplay = 'unknown';
   
   if (crackTimeSeconds && crackTimeSeconds !== 'unknown') {
-    // Try to parse if it's a number
     if (typeof crackTimeSeconds === 'number') {
       crackTimeDisplay = formatCrackTime(crackTimeSeconds);
     } else {
       crackTimeDisplay = crackTimeSeconds;
     }
   }
-  meter.crackTimeValue.textContent = crackTimeDisplay;
   
-  // Wait for breach result
-  let breachResult = { isBreached: false, count: 0 };
-  
-  try {
-    const result = await breachPromise;
-    breachResult = result;
-    
-    if (breachResult.isBreached) {
-      meter.breachStatusValue.textContent = `❌ BREACHED (${breachResult.count})`;
-      meter.breachStatusValue.style.background = '#dc3545';
-      meter.breachStatusValue.style.color = 'white';
-    } else {
-      meter.breachStatusValue.textContent = '✅ SAFE';
-      meter.breachStatusValue.style.background = '#28a745';
-      meter.breachStatusValue.style.color = 'white';
-    }
-    
-    if (breachResult.error) {
-      meter.breachStatusValue.textContent = '⚠️ CHECK FAILED';
-      meter.breachStatusValue.style.background = '#ffc107';
-      meter.breachStatusValue.style.color = '#495057';
-    }
-  } catch (error) {
-    meter.breachStatusValue.textContent = '⚠️ ERROR';
-    meter.breachStatusValue.style.background = '#dc3545';
-    meter.breachStatusValue.style.color = 'white';
-    console.error('Breach check error:', error);
-    breachResult.error = error.message;
+  // Override crack time for breached/common passwords
+  if (breachResult.isBreached || commonWeakPasswords.includes(password.toLowerCase())) {
+    crackTimeDisplay = 'INSTANT (breached)';
   }
   
-  // Update feedback message
-  if (analysis && analysis.feedback) {
-    let feedbackText = '';
-    
-    if (analysis.feedback.warning) {
-      feedbackText = `⚠️ ${analysis.feedback.warning}`;
-      meter.feedbackMessage.style.background = '#fff5f5';
-      meter.feedbackMessage.style.borderLeftColor = '#dc3545';
-    } else if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
-      feedbackText = `💡 ${analysis.feedback.suggestions[0]}`;
-      meter.feedbackMessage.style.background = '#f0fff4';
-      meter.feedbackMessage.style.borderLeftColor = '#28a745';
-    }
-    
-    if (feedbackText) {
-      meter.feedbackMessage.textContent = feedbackText;
-      meter.feedbackMessage.style.display = 'block';
+  meter.crackTimeValue.textContent = crackTimeDisplay;
+  
+  // Update breach status
+  if (breachResult.isBreached) {
+    meter.breachStatusValue.textContent = `❌ BREACHED (${breachResult.count})`;
+    meter.breachStatusValue.style.background = '#dc3545';
+    meter.breachStatusValue.style.color = 'white';
+  } else if (breachResult.error) {
+    meter.breachStatusValue.textContent = '⚠️ CHECK FAILED';
+    meter.breachStatusValue.style.background = '#ffc107';
+    meter.breachStatusValue.style.color = '#495057';
+  } else {
+    meter.breachStatusValue.textContent = '✅ SAFE';
+    meter.breachStatusValue.style.background = '#28a745';
+    meter.breachStatusValue.style.color = 'white';
+  }
+  
+  // Update feedback message if not already set by breach/weak conditions
+  if (!meter.feedbackMessage.style.display || meter.feedbackMessage.style.display === 'none') {
+    if (analysis && analysis.feedback) {
+      let feedbackText = '';
+      
+      if (analysis.feedback.warning) {
+        feedbackText = `⚠️ ${analysis.feedback.warning}`;
+        meter.feedbackMessage.style.background = '#fff5f5';
+        meter.feedbackMessage.style.borderLeftColor = '#dc3545';
+      } else if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
+        feedbackText = `💡 ${analysis.feedback.suggestions[0]}`;
+        meter.feedbackMessage.style.background = '#f0fff4';
+        meter.feedbackMessage.style.borderLeftColor = '#28a745';
+      }
+      
+      if (feedbackText) {
+        meter.feedbackMessage.textContent = feedbackText;
+        meter.feedbackMessage.style.display = 'block';
+      } else {
+        meter.feedbackMessage.style.display = 'none';
+      }
     } else {
       meter.feedbackMessage.style.display = 'none';
     }
-  } else {
-    meter.feedbackMessage.style.display = 'none';
   }
 }
-
 function refreshMeterData(passwordField) {
   console.log('🔄 Refreshing meter data');
   if (passwordField && passwordField.value) {
@@ -753,27 +808,49 @@ function showDetailedAnalysis(passwordField) {
   const password = passwordField.value || 'empty';
   const analysis = typeof zxcvbn !== 'undefined' ? zxcvbn(password) : null;
   
-  let details = '🔍 DETAILED ANALYSIS\n\n';
-  details += `Password: ${'•'.repeat(Math.min(password.length, 20))}\n`;
-  details += `Length: ${password.length} characters\n\n`;
+  // Check if breached
+  let breachStatus = 'Unknown';
+  let breachCount = 0;
   
-  if (analysis) {
-    details += `Strength Score: ${analysis.score}/4\n`;
-    details += `Crack Time (online): ${analysis.crack_times_display?.online_no_throttling_10_per_second || 'unknown'}\n`;
-    details += `Crack Time (offline): ${analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'}\n`;
-    details += `Entropy: ${Math.log2(Math.pow(10, analysis.guesses_log10 || 0)).toFixed(1)} bits\n\n`;
+  // We need to get breach result - for now, we'll use a placeholder
+  // In a real implementation, you'd want to pass the breach result
+  checkBreach(password).then(breachResult => {
+    breachStatus = breachResult.isBreached ? 'BREACHED' : 'SAFE';
+    breachCount = breachResult.count || 0;
     
-    if (analysis.feedback?.warning) {
-      details += `⚠️ Warning: ${analysis.feedback.warning}\n`;
+    let details = '🔍 DETAILED ANALYSIS\n\n';
+    details += `Password: ${'•'.repeat(Math.min(password.length, 20))}\n`;
+    details += `Length: ${password.length} characters\n`;
+    details += `Breach Status: ${breachStatus} ${breachCount > 0 ? `(${breachCount} breaches)` : ''}\n\n`;
+    
+    if (analysis) {
+      // Override score if breached
+      const finalScore = breachResult.isBreached ? 0 : analysis.score;
+      const strengthNames = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+      
+      details += `Strength: ${strengthNames[finalScore]} (${finalScore}/4)\n`;
+      details += `Crack Time (offline): ${analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'}\n`;
+      details += `Entropy: ${Math.log2(Math.pow(10, analysis.guesses_log10 || 0)).toFixed(1)} bits\n\n`;
+      
+      if (breachResult.isBreached) {
+        details += `🚨 CRITICAL: This password has been exposed in data breaches!\n`;
+        details += `Do NOT use this password anywhere. Change it immediately.\n\n`;
+      }
+      
+      if (analysis.feedback?.warning) {
+        details += `⚠️ Warning: ${analysis.feedback.warning}\n`;
+      }
+      
+      if (analysis.feedback?.suggestions?.length > 0) {
+        details += '\n💡 Suggestions:\n';
+        analysis.feedback.suggestions.forEach(s => details += `  • ${s}\n`);
+      }
     }
     
-    if (analysis.feedback?.suggestions?.length > 0) {
-      details += '\n💡 Suggestions:\n';
-      analysis.feedback.suggestions.forEach(s => details += `  • ${s}\n`);
-    }
-  }
-  
-  alert(details);
+    alert(details);
+  }).catch(error => {
+    alert('Error checking breach status. Please try again.');
+  });
 }
 
 function setupAutoShowMeter() {
@@ -836,4 +913,4 @@ observer.observe(document.body, { childList: true, subtree: true });
 
 setTimeout(monitorPasswordFields, 1000);
 
-console.log("✅ Complete password analyzer active!");s
+console.log("✅ Complete password analyzer active!");
