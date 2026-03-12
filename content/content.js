@@ -619,10 +619,13 @@ function formatCrackTime(seconds) {
 }
 
 async function analyzePassword(passwordField, password) {
-  console.log('🔍 Analyzing password:', password);
+  console.log('🔍 analyzePassword called with password:', password);
   
   const meter = passwordField._passwordMeter;
-  if (!meter) return;
+  if (!meter) {
+    console.log('❌ No meter found');
+    return;
+  }
   
   if (password.length === 0) {
     meter.container.style.display = 'none';
@@ -631,20 +634,16 @@ async function analyzePassword(passwordField, password) {
   
   meter.container.style.display = 'block';
   
-  // Update breach status to checking
+  // Show checking state
   meter.breachStatusValue.textContent = 'Checking...';
   meter.breachStatusValue.style.background = '#e9ecef';
   meter.breachStatusValue.style.color = '#495057';
   
+  // Run analysis
   let score, analysis;
   if (typeof zxcvbn !== 'undefined') {
     analysis = zxcvbn(password);
     score = analysis.score;
-    
-    console.log('🔐 zxcvbn analysis:', {
-      score: score,
-      crackTime: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'
-    });
   } else {
     score = Math.min(4, Math.floor(password.length / 3));
     analysis = { 
@@ -653,76 +652,34 @@ async function analyzePassword(passwordField, password) {
     };
   }
   
-  const breachPromise = checkBreach(password);
+  // Check breach
+  const breachResult = await checkBreach(password);
+  console.log('🔐 Breach result:', breachResult);
   
-  // Wait for breach result FIRST
-  let breachResult = { isBreached: false, count: 0 };
+  // Determine final score (override if breached)
+  let finalScore = score;
+  let finalStrengthData = getStrengthData(score);
   
-  try {
-    const result = await breachPromise;
-    breachResult = result;
-  } catch (error) {
-    console.error('Breach check error:', error);
-    breachResult.error = error.message;
-  }
-  
-  // ===== FIX: Override score if password is breached =====
-  // If password is breached, force score to 0 (Very Weak)
-  // Also check for common weak passwords
+  // Common weak passwords list
   const commonWeakPasswords = [
     '123456', '12345678', 'password', '123456789', '12345', 
     '1234567', 'password1', '1234567890', '123123', '0',
     '111111', 'abc123', 'qwerty', 'admin', 'letmein', 'welcome'
   ];
   
-  let finalScore = score;
-  let finalStrengthData = getStrengthData(score);
-  
   if (breachResult.isBreached) {
     console.log('🚨 Password breached - forcing score to 0');
     finalScore = 0;
     finalStrengthData = getStrengthData(0);
-    
-    // Update feedback message for breached password
-    if (meter.feedbackMessage) {
-      meter.feedbackMessage.textContent = `🚨 CRITICAL: This password has appeared in ${breachResult.count} data breach(es)! Do NOT use this password anywhere.`;
-      meter.feedbackMessage.style.background = '#fff5f5';
-      meter.feedbackMessage.style.borderLeftColor = '#dc3545';
-      meter.feedbackMessage.style.display = 'block';
-    }
-  } 
-  else if (commonWeakPasswords.includes(password.toLowerCase())) {
-    console.log('⚠️ Common weak password detected - forcing score to 0');
+  } else if (commonWeakPasswords.includes(password.toLowerCase())) {
+    console.log('⚠️ Common weak password - forcing score to 0');
     finalScore = 0;
     finalStrengthData = getStrengthData(0);
-    
-    // Update feedback message for common weak password
-    if (meter.feedbackMessage) {
-      meter.feedbackMessage.textContent = `⚠️ This is a very common password and is extremely easy to guess. Choose a different, unique password.`;
-      meter.feedbackMessage.style.background = '#fff5f5';
-      meter.feedbackMessage.style.borderLeftColor = '#dc3545';
-      meter.feedbackMessage.style.display = 'block';
-    }
-  }
-  else if (score <= 1) {
-    // Already weak, keep as is
-    if (meter.feedbackMessage) {
-      let feedbackText = '';
-      if (analysis?.feedback?.warning) {
-        feedbackText = `⚠️ ${analysis.feedback.warning}`;
-      } else {
-        feedbackText = '⚠️ This password is too weak. Add more characters, numbers, and symbols.';
-      }
-      meter.feedbackMessage.textContent = feedbackText;
-      meter.feedbackMessage.style.background = '#fff5f5';
-      meter.feedbackMessage.style.borderLeftColor = '#dc3545';
-      meter.feedbackMessage.style.display = 'block';
-    }
   }
   
+  // Update UI
   const widthPercent = (finalScore + 1) * 20;
   
-  // Update UI with FINAL score (overridden if breached)
   meter.strengthLabel.textContent = finalStrengthData.name;
   meter.strengthLabel.style.color = finalStrengthData.color;
   
@@ -730,7 +687,10 @@ async function analyzePassword(passwordField, password) {
   meter.scoreBadge.style.background = finalStrengthData.color;
   meter.scoreBadge.style.color = '#ffffff';
   
-  meter.securityLevelHeader.querySelector('.security-value').textContent = `${finalScore}/4`;
+  if (meter.securityLevelHeader) {
+    const securityValue = meter.securityLevelHeader.querySelector('.security-value');
+    if (securityValue) securityValue.textContent = `${finalScore}/4`;
+  }
   
   meter.progressFill.style.width = widthPercent + '%';
   meter.progressFill.style.background = finalStrengthData.color;
@@ -749,7 +709,6 @@ async function analyzePassword(passwordField, password) {
     }
   }
   
-  // Override crack time for breached/common passwords
   if (breachResult.isBreached || commonWeakPasswords.includes(password.toLowerCase())) {
     crackTimeDisplay = 'INSTANT (breached)';
   }
@@ -771,37 +730,87 @@ async function analyzePassword(passwordField, password) {
     meter.breachStatusValue.style.color = 'white';
   }
   
-  // Update feedback message if not already set by breach/weak conditions
-  if (!meter.feedbackMessage.style.display || meter.feedbackMessage.style.display === 'none') {
-    if (analysis && analysis.feedback) {
-      let feedbackText = '';
-      
-      if (analysis.feedback.warning) {
-        feedbackText = `⚠️ ${analysis.feedback.warning}`;
-        meter.feedbackMessage.style.background = '#fff5f5';
-        meter.feedbackMessage.style.borderLeftColor = '#dc3545';
-      } else if (analysis.feedback.suggestions && analysis.feedback.suggestions.length > 0) {
-        feedbackText = `💡 ${analysis.feedback.suggestions[0]}`;
-        meter.feedbackMessage.style.background = '#f0fff4';
-        meter.feedbackMessage.style.borderLeftColor = '#28a745';
-      }
-      
-      if (feedbackText) {
-        meter.feedbackMessage.textContent = feedbackText;
-        meter.feedbackMessage.style.display = 'block';
-      } else {
-        meter.feedbackMessage.style.display = 'none';
-      }
-    } else {
-      meter.feedbackMessage.style.display = 'none';
-    }
+  // Update feedback message
+  updateFeedbackMessage(meter, analysis, breachResult, password);
+}
+
+// Helper function for feedback messages
+function updateFeedbackMessage(meter, analysis, breachResult, password) {
+  const commonWeakPasswords = [
+    '123456', '12345678', 'password', '123456789', '12345'
+  ];
+  
+  if (breachResult.isBreached) {
+    meter.feedbackMessage.textContent = `🚨 CRITICAL: This password has appeared in ${breachResult.count} data breach(es)! Do NOT use this password anywhere.`;
+    meter.feedbackMessage.style.background = '#fff5f5';
+    meter.feedbackMessage.style.borderLeftColor = '#dc3545';
+    meter.feedbackMessage.style.display = 'block';
+  } 
+  else if (commonWeakPasswords.includes(password.toLowerCase())) {
+    meter.feedbackMessage.textContent = `⚠️ This is a very common password and is extremely easy to guess. Choose a different, unique password.`;
+    meter.feedbackMessage.style.background = '#fff5f5';
+    meter.feedbackMessage.style.borderLeftColor = '#dc3545';
+    meter.feedbackMessage.style.display = 'block';
+  }
+  else if (analysis?.feedback?.warning) {
+    meter.feedbackMessage.textContent = `⚠️ ${analysis.feedback.warning}`;
+    meter.feedbackMessage.style.background = '#fff5f5';
+    meter.feedbackMessage.style.borderLeftColor = '#dc3545';
+    meter.feedbackMessage.style.display = 'block';
+  }
+  else if (analysis?.feedback?.suggestions?.length > 0) {
+    meter.feedbackMessage.textContent = `💡 ${analysis.feedback.suggestions[0]}`;
+    meter.feedbackMessage.style.background = '#f0fff4';
+    meter.feedbackMessage.style.borderLeftColor = '#28a745';
+    meter.feedbackMessage.style.display = 'block';
+  }
+  else {
+    meter.feedbackMessage.style.display = 'none';
   }
 }
 function refreshMeterData(passwordField) {
-  console.log('🔄 Refreshing meter data');
-  if (passwordField && passwordField.value) {
-    analyzePassword(passwordField, passwordField.value);
+  console.log('🔄 Refresh button clicked, refreshing meter for field:', passwordField);
+  
+  // If no password field was provided, try to find one
+  if (!passwordField) {
+    console.log('⚠️ No password field provided, searching...');
+    const fields = findPasswordFields();
+    if (fields.length > 0) {
+      passwordField = fields[0];
+      console.log('✅ Found password field:', passwordField);
+    } else {
+      console.log('❌ No password fields found on page');
+      return;
+    }
   }
+  
+  // Check if the field has a meter attached
+  if (!passwordField._passwordMeter) {
+    console.log('❌ Password field has no meter attached. Creating one...');
+    createPasswordMeter(passwordField);
+    // Give it a moment to initialize
+    setTimeout(() => {
+      if (passwordField.value) {
+        analyzePassword(passwordField, passwordField.value);
+      }
+    }, 100);
+    return;
+  }
+  
+  // Get current password
+  const password = passwordField.value;
+  console.log('🔍 Current password length:', password.length);
+  
+  if (!password || password.length === 0) {
+    console.log('📪 Password empty, hiding meter');
+    passwordField._passwordMeter.container.style.display = 'none';
+    return;
+  }
+  
+  // Show meter and run fresh analysis
+  console.log('📊 Running fresh analysis...');
+  passwordField._passwordMeter.container.style.display = 'block';
+  analyzePassword(passwordField, password);
 }
 
 function showDetailedAnalysis(passwordField) {
