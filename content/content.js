@@ -905,14 +905,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ==================== INITIALIZATION ====================
 
 console.log("🔍 Starting initialization...");
-monitorPasswordFields();
 
-const observer = new MutationObserver(() => {
+// Wait for page to fully load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('📄 DOM fully loaded, creating meter...');
+    monitorPasswordFields();
+  });
+} else {
+  console.log('📄 DOM already loaded, creating meter...');
   monitorPasswordFields();
-  setupAutoShowMeter();
+}
+
+// Also try after a short delay (for dynamic pages)
+setTimeout(() => {
+  console.log('⏰ Delayed initialization check...');
+  const fields = findPasswordFields();
+  if (fields.length > 0 && !fields[0]._passwordMeter) {
+    console.log('⚠️ Meter missing, creating now...');
+    createPasswordMeter(fields[0]);
+  }
+}, 1000);
+
+// Monitor for dynamically added password fields
+const observer = new MutationObserver(() => {
+  const fields = findPasswordFields();
+  if (fields.length > 0 && !fields[0]._passwordMeter) {
+    console.log('🔄 New password field detected, creating meter...');
+    createPasswordMeter(fields[0]);
+  }
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
-setTimeout(monitorPasswordFields, 1000);
-
-console.log("✅ Complete password analyzer active!");
+console.log("✅ Password analyzer ready!");
