@@ -437,53 +437,6 @@ function updateFeedbackMessage(meter, analysis, breachResult, password) {
   }
 }
 
-// ==================== REFRESH FUNCTION ====================
-
-function refreshMeterData(passwordField) {
-  console.log('🔄 Refresh button clicked, refreshing meter for field:', passwordField);
-  
-  // If no password field was provided, try to find one
-  if (!passwordField) {
-    console.log('⚠️ No password field provided, searching...');
-    const fields = findPasswordFields();
-    if (fields.length > 0) {
-      passwordField = fields[0];
-      console.log('✅ Found password field:', passwordField);
-    } else {
-      console.log('❌ No password fields found on page');
-      return;
-    }
-  }
-  
-  // Check if the field has a meter attached
-  if (!passwordField._passwordMeter) {
-    console.log('❌ Password field has no meter attached. Creating one...');
-    createPasswordMeter(passwordField);
-    // Give it a moment to initialize
-    setTimeout(() => {
-      if (passwordField.value) {
-        analyzePassword(passwordField, passwordField.value);
-      }
-    }, 100);
-    return;
-  }
-  
-  // Get current password
-  const password = passwordField.value;
-  console.log('🔍 Current password length:', password.length);
-  
-  if (!password || password.length === 0) {
-    console.log('📪 Password empty, hiding meter');
-    passwordField._passwordMeter.container.style.display = 'none';
-    return;
-  }
-  
-  // Show meter and run fresh analysis
-  console.log('📊 Running fresh analysis...');
-  passwordField._passwordMeter.container.style.display = 'block';
-  analyzePassword(passwordField, password);
-}
-
 // ==================== UI CREATION FUNCTIONS ====================
 
 function createPasswordMeter(passwordField) {
@@ -680,40 +633,17 @@ function createPasswordMeter(passwordField) {
     display: none;
   `;
   
-  // Buttons
+  // Button Container - Only Details button (removed Refresh button)
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = `
     display: flex;
     gap: 12px;
   `;
   
-  const refreshBtn = document.createElement('button');
-  refreshBtn.textContent = '↻ Refresh';
-  refreshBtn.style.cssText = `
-    flex: 1;
-    padding: 12px;
-    background: #e9ecef;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-  `;
-  refreshBtn.addEventListener('mouseenter', () => {
-    refreshBtn.style.background = '#dee2e6';
-  });
-  refreshBtn.addEventListener('mouseleave', () => {
-    refreshBtn.style.background = '#e9ecef';
-  });
-  refreshBtn.addEventListener('click', () => {
-    refreshMeterData(passwordField);
-  });
-  
   const detailsBtn = document.createElement('button');
   detailsBtn.textContent = '📋 Details';
   detailsBtn.style.cssText = `
-    flex: 1;
+    width: 100%;
     padding: 12px;
     background: #4a90e2;
     color: white;
@@ -734,7 +664,6 @@ function createPasswordMeter(passwordField) {
     showDetailedAnalysis(passwordField);
   });
   
-  buttonContainer.appendChild(refreshBtn);
   buttonContainer.appendChild(detailsBtn);
   
   // Assemble content
@@ -773,7 +702,7 @@ function createPasswordMeter(passwordField) {
     feedbackMessage
   };
   
-  // Input listener
+  // Input listener for real-time updates
   if (passwordField._inputHandler) {
     passwordField.removeEventListener('input', passwordField._inputHandler);
   }
@@ -967,4 +896,23 @@ const mutationObserver = new MutationObserver(() => {
 mutationObserver.observe(document.body, { childList: true, subtree: true });
 
 // Debug function - type debugPasswordMeter() in console
-window
+window.debugPasswordMeter = function() {
+  console.log('=== PASSWORD METER DEBUG ===');
+  const fields = findPasswordFields();
+  console.log('Password fields found:', fields.length);
+  if (fields.length > 0) {
+    const field = fields[0];
+    console.log('Field ID:', field.id);
+    console.log('Field name:', field.name);
+    console.log('Has _passwordMeter:', !!field._passwordMeter);
+    if (field._passwordMeter) {
+      console.log('Meter container:', field._passwordMeter.container);
+      console.log('Meter visible:', field._passwordMeter.container.style.display !== 'none');
+      console.log('Current password length:', field.value.length);
+    }
+  }
+  console.log('========================');
+};
+
+console.log("✅ Password analyzer ready!");
+console.log("💡 Tip: Type 'debugPasswordMeter()' in console to debug");
