@@ -906,35 +906,65 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 console.log("🔍 Starting initialization...");
 
+// Function to ensure meter is created
+function ensureMeterExists() {
+  console.log('🔧 Ensuring meter exists...');
+  const fields = findPasswordFields();
+  console.log(`📊 Found ${fields.length} password field(s) on page`);
+  
+  if (fields.length > 0) {
+    const field = fields[0];
+    if (!field._passwordMeter) {
+      console.log('🔨 Creating meter on field:', field.id || field.name || 'unnamed');
+      createPasswordMeter(field);
+      indicators.set(field, true);
+      console.log('✅ Meter created successfully!');
+      
+      // If field already has a value, show the meter
+      if (field.value) {
+        console.log('📊 Field has value, showing meter...');
+        field._passwordMeter.container.style.display = 'block';
+        analyzePassword(field, field.value);
+      }
+    } else {
+      console.log('✅ Meter already exists');
+    }
+  } else {
+    console.log('⚠️ No password fields found yet, will check again later');
+  }
+}
+
 // Wait for page to fully load
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('📄 DOM fully loaded, creating meter...');
-    monitorPasswordFields();
+    console.log('📄 DOM fully loaded');
+    ensureMeterExists();
   });
 } else {
-  console.log('📄 DOM already loaded, creating meter...');
-  monitorPasswordFields();
+  console.log('📄 DOM already loaded');
+  ensureMeterExists();
 }
 
-// Also try after a short delay (for dynamic pages)
+// Try again after delays for dynamic pages
 setTimeout(() => {
-  console.log('⏰ Delayed initialization check...');
-  const fields = findPasswordFields();
-  if (fields.length > 0 && !fields[0]._passwordMeter) {
-    console.log('⚠️ Meter missing, creating now...');
-    createPasswordMeter(fields[0]);
-  }
-}, 1000);
+  console.log('⏰ Delayed check (500ms)...');
+  ensureMeterExists();
+}, 500);
+
+setTimeout(() => {
+  console.log('⏰ Delayed check (1500ms)...');
+  ensureMeterExists();
+}, 1500);
 
 // Monitor for dynamically added password fields
-const observer = new MutationObserver(() => {
+const mutationObserver = new MutationObserver(() => {
   const fields = findPasswordFields();
   if (fields.length > 0 && !fields[0]._passwordMeter) {
-    console.log('🔄 New password field detected, creating meter...');
-    createPasswordMeter(fields[0]);
+    console.log('🔄 Mutation detected - new password field added');
+    ensureMeterExists();
   }
 });
-observer.observe(document.body, { childList: true, subtree: true });
+mutationObserver.observe(document.body, { childList: true, subtree: true });
 
-console.log("✅ Password analyzer ready!");
+// Debug function - type debugPasswordMeter() in console
+window
