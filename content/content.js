@@ -131,6 +131,7 @@ function getStrengthData(score) {
 
 function formatCrackTime(seconds) {
   if (!seconds || seconds === 'unknown') return 'unknown';
+  if (typeof seconds === 'string') return seconds;
   
   const minute = 60;
   const hour = minute * 60;
@@ -366,23 +367,32 @@ async function analyzePassword(passwordField, password) {
   
   meter.lengthValue.textContent = password.length;
   
-  // Format crack time
-  const crackTimeSeconds = analysis?.crack_times_display?.offline_fast_hashing_1e10_per_second;
-  let crackTimeDisplay = 'unknown';
+  // Format crack time 
+let crackTimeDisplay = 'unknown';
+
+if (analysis && analysis.crack_times_display) {
+  const crackTimeObj = analysis.crack_times_display.offline_fast_hashing_1e10_per_second;
   
-  if (crackTimeSeconds && crackTimeSeconds !== 'unknown') {
-    if (typeof crackTimeSeconds === 'number') {
-      crackTimeDisplay = formatCrackTime(crackTimeSeconds);
+  if (crackTimeObj) {
+    if (typeof crackTimeObj === 'string') {
+      crackTimeDisplay = crackTimeObj;
+    } else if (typeof crackTimeObj === 'number') {
+      crackTimeDisplay = formatCrackTime(crackTimeObj);
+    } else if (crackTimeObj.display) {
+      // This is the key fix - zxcvbn returns an object with a .display property
+      crackTimeDisplay = crackTimeObj.display;
     } else {
-      crackTimeDisplay = crackTimeSeconds;
+      crackTimeDisplay = 'unknown';
     }
   }
-  
-  if (breachResult.isBreached || commonWeakPasswords.includes(password.toLowerCase())) {
-    crackTimeDisplay = 'INSTANT (breached)';
-  }
-  
-  meter.crackTimeValue.textContent = crackTimeDisplay;
+}
+
+// Override for breached/common passwords
+if (breachResult.isBreached || commonWeakPasswords.includes(password.toLowerCase())) {
+  crackTimeDisplay = 'INSTANT (breached)';
+}
+
+meter.crackTimeValue.textContent = crackTimeDisplay;
   
   // Update breach status
   if (breachResult.isBreached) {
