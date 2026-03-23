@@ -437,6 +437,53 @@ function updateFeedbackMessage(meter, analysis, breachResult, password) {
   }
 }
 
+// ==================== REFRESH FUNCTION ====================
+
+function refreshMeterData(passwordField) {
+  console.log('🔄 Refresh button clicked, refreshing meter for field:', passwordField);
+  
+  // If no password field was provided, try to find one
+  if (!passwordField) {
+    console.log('⚠️ No password field provided, searching...');
+    const fields = findPasswordFields();
+    if (fields.length > 0) {
+      passwordField = fields[0];
+      console.log('✅ Found password field:', passwordField);
+    } else {
+      console.log('❌ No password fields found on page');
+      return;
+    }
+  }
+  
+  // Check if the field has a meter attached
+  if (!passwordField._passwordMeter) {
+    console.log('❌ Password field has no meter attached. Creating one...');
+    createPasswordMeter(passwordField);
+    // Give it a moment to initialize
+    setTimeout(() => {
+      if (passwordField.value) {
+        analyzePassword(passwordField, passwordField.value);
+      }
+    }, 100);
+    return;
+  }
+  
+  // Get current password
+  const password = passwordField.value;
+  console.log('🔍 Current password length:', password.length);
+  
+  if (!password || password.length === 0) {
+    console.log('📪 Password empty, hiding meter');
+    passwordField._passwordMeter.container.style.display = 'none';
+    return;
+  }
+  
+  // Show meter and run fresh analysis
+  console.log('📊 Running fresh analysis...');
+  passwordField._passwordMeter.container.style.display = 'block';
+  analyzePassword(passwordField, password);
+}
+
 // ==================== UI CREATION FUNCTIONS ====================
 
 function createPasswordMeter(passwordField) {
@@ -633,17 +680,40 @@ function createPasswordMeter(passwordField) {
     display: none;
   `;
   
-  // Button Container - Only Details button (removed Refresh button)
+  // Buttons
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = `
     display: flex;
     gap: 12px;
   `;
   
+  const refreshBtn = document.createElement('button');
+  refreshBtn.textContent = '↻ Refresh';
+  refreshBtn.style.cssText = `
+    flex: 1;
+    padding: 12px;
+    background: #e9ecef;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  `;
+  refreshBtn.addEventListener('mouseenter', () => {
+    refreshBtn.style.background = '#dee2e6';
+  });
+  refreshBtn.addEventListener('mouseleave', () => {
+    refreshBtn.style.background = '#e9ecef';
+  });
+  refreshBtn.addEventListener('click', () => {
+    refreshMeterData(passwordField);
+  });
+  
   const detailsBtn = document.createElement('button');
   detailsBtn.textContent = '📋 Details';
   detailsBtn.style.cssText = `
-    width: 100%;
+    flex: 1;
     padding: 12px;
     background: #4a90e2;
     color: white;
@@ -664,6 +734,7 @@ function createPasswordMeter(passwordField) {
     showDetailedAnalysis(passwordField);
   });
   
+  buttonContainer.appendChild(refreshBtn);
   buttonContainer.appendChild(detailsBtn);
   
   // Assemble content
@@ -702,7 +773,7 @@ function createPasswordMeter(passwordField) {
     feedbackMessage
   };
   
-  // Input listener for real-time updates
+  // Input listener
   if (passwordField._inputHandler) {
     passwordField.removeEventListener('input', passwordField._inputHandler);
   }
@@ -730,24 +801,52 @@ function showDetailedAnalysis(passwordField) {
   const password = passwordField.value || 'empty';
   const analysis = typeof zxcvbn !== 'undefined' ? zxcvbn(password) : null;
   
+  // Helper function to format crack time properly
+  function formatCrackTimeValue(timeValue) {
+    if (!timeValue) return 'unknown';
+    if (typeof timeValue === 'string') return timeValue;
+    if (typeof timeValue === 'number') return formatCrackTime(timeValue);
+    if (timeValue.display) return timeValue.display;
+    return 'unknown';
+  }
+  
   let details = '🔍 DETAILED ANALYSIS\n\n';
   details += `Password: ${'•'.repeat(Math.min(password.length, 20))}\n`;
   details += `Length: ${password.length} characters\n\n`;
   
   if (analysis) {
+    // Get the crack times properly formatted
+    const offlineTime = analysis.crack_times_display?.offline_fast_hashing_1e10_per_second;
+    const onlineTime = analysis.crack_times_display?.online_no_throttling_10_per_second;
+    
+    const offlineTimeDisplay = formatCrackTimeValue(offlineTime);
+    const onlineTimeDisplay = formatCrackTimeValue(onlineTime);
+    
     details += `Strength Score: ${analysis.score}/4\n`;
-    details += `Crack Time (online): ${analysis.crack_times_display?.online_no_throttling_10_per_second || 'unknown'}\n`;
-    details += `Crack Time (offline): ${analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'}\n`;
-    details += `Entropy: ${Math.log2(Math.pow(10, analysis.guesses_log10 || 0)).toFixed(1)} bits\n\n`;
+    details += `Strength Level: ${getStrengthData(analysis.score).name}\n\n`;
+    
+    details += `⏱️ CRACK TIME ESTIMATES:\n`;
+    details += `   • Online Attack: ${onlineTimeDisplay}\n`;
+    details += `     (Hacker trying to log in to the website directly)\n`;
+    details += `   • Offline Attack: ${offlineTimeDisplay}\n`;
+    details += `     (Hacker has stolen the password database)\n\n`;
+    
+    details += `📊 Entropy: ${Math.log2(Math.pow(10, analysis.guesses_log10 || 0)).toFixed(1)} bits\n`;
+    details += `🔢 Guesses: ${analysis.guesses_log10 ? Math.pow(10, analysis.guesses_log10).toExponential(2) : 'unknown'}\n\n`;
     
     if (analysis.feedback?.warning) {
-      details += `⚠️ Warning: ${analysis.feedback.warning}\n`;
+      details += `⚠️ WARNING: ${analysis.feedback.warning}\n`;
     }
     
     if (analysis.feedback?.suggestions?.length > 0) {
-      details += '\n💡 Suggestions:\n';
-      analysis.feedback.suggestions.forEach(s => details += `  • ${s}\n`);
+      details += '\n💡 SUGGESTIONS:\n';
+      analysis.feedback.suggestions.forEach(s => details += `   • ${s}\n`);
     }
+    
+    // Add breach check info
+    details += '\n🔐 BREACH STATUS:\n';
+    details += `   Checking password against ${breachCache.size} cached prefixes...\n`;
+    details += `   (Results show in main meter)`;
   }
   
   alert(details);
@@ -835,84 +934,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 console.log("🔍 Starting initialization...");
 
-// Function to ensure meter is created
-function ensureMeterExists() {
-  console.log('🔧 Ensuring meter exists...');
-  const fields = findPasswordFields();
-  console.log(`📊 Found ${fields.length} password field(s) on page`);
-  
-  if (fields.length > 0) {
-    const field = fields[0];
-    if (!field._passwordMeter) {
-      console.log('🔨 Creating meter on field:', field.id || field.name || 'unnamed');
-      createPasswordMeter(field);
-      indicators.set(field, true);
-      console.log('✅ Meter created successfully!');
-      
-      // If field already has a value, show the meter
-      if (field.value) {
-        console.log('📊 Field has value, showing meter...');
-        field._passwordMeter.container.style.display = 'block';
-        analyzePassword(field, field.value);
-      }
-    } else {
-      console.log('✅ Meter already exists');
-    }
-  } else {
-    console.log('⚠️ No password fields found yet, will check again later');
-  }
-}
-
 // Wait for page to fully load
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('📄 DOM fully loaded');
-    ensureMeterExists();
+    console.log('📄 DOM fully loaded, creating meter...');
+    monitorPasswordFields();
   });
 } else {
-  console.log('📄 DOM already loaded');
-  ensureMeterExists();
+  console.log('📄 DOM already loaded, creating meter...');
+  monitorPasswordFields();
 }
 
-// Try again after delays for dynamic pages
+// Also try after a short delay (for dynamic pages)
 setTimeout(() => {
-  console.log('⏰ Delayed check (500ms)...');
-  ensureMeterExists();
-}, 500);
-
-setTimeout(() => {
-  console.log('⏰ Delayed check (1500ms)...');
-  ensureMeterExists();
-}, 1500);
-
-// Monitor for dynamically added password fields
-const mutationObserver = new MutationObserver(() => {
+  console.log('⏰ Delayed initialization check...');
   const fields = findPasswordFields();
   if (fields.length > 0 && !fields[0]._passwordMeter) {
-    console.log('🔄 Mutation detected - new password field added');
-    ensureMeterExists();
+    console.log('⚠️ Meter missing, creating now...');
+    createPasswordMeter(fields[0]);
+  }
+}, 1000);
+
+// Monitor for dynamically added password fields
+const observer = new MutationObserver(() => {
+  const fields = findPasswordFields();
+  if (fields.length > 0 && !fields[0]._passwordMeter) {
+    console.log('🔄 New password field detected, creating meter...');
+    createPasswordMeter(fields[0]);
   }
 });
-mutationObserver.observe(document.body, { childList: true, subtree: true });
+observer.observe(document.body, { childList: true, subtree: true });
 
-// Debug function - type debugPasswordMeter() in console
-window.debugPasswordMeter = function() {
-  console.log('=== PASSWORD METER DEBUG ===');
-  const fields = findPasswordFields();
-  console.log('Password fields found:', fields.length);
-  if (fields.length > 0) {
-    const field = fields[0];
-    console.log('Field ID:', field.id);
-    console.log('Field name:', field.name);
-    console.log('Has _passwordMeter:', !!field._passwordMeter);
-    if (field._passwordMeter) {
-      console.log('Meter container:', field._passwordMeter.container);
-      console.log('Meter visible:', field._passwordMeter.container.style.display !== 'none');
-      console.log('Current password length:', field.value.length);
-    }
-  }
-  console.log('========================');
-};
-
-console.log("✅ Password analyzer ready!");
-console.log("💡 Tip: Type 'debugPasswordMeter()' in console to debug");
+console.log("✅ Password analyzer ready!");s
