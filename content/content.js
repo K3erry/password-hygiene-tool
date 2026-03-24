@@ -368,31 +368,30 @@ async function analyzePassword(passwordField, password) {
   meter.lengthValue.textContent = password.length;
   
   // Format crack time 
-let crackTimeDisplay = 'unknown';
+  let crackTimeDisplay = 'unknown';
 
-if (analysis && analysis.crack_times_display) {
-  const crackTimeObj = analysis.crack_times_display.offline_fast_hashing_1e10_per_second;
-  
-  if (crackTimeObj) {
-    if (typeof crackTimeObj === 'string') {
-      crackTimeDisplay = crackTimeObj;
-    } else if (typeof crackTimeObj === 'number') {
-      crackTimeDisplay = formatCrackTime(crackTimeObj);
-    } else if (crackTimeObj.display) {
-      // This is the key fix - zxcvbn returns an object with a .display property
-      crackTimeDisplay = crackTimeObj.display;
-    } else {
-      crackTimeDisplay = 'unknown';
+  if (analysis && analysis.crack_times_display) {
+    const crackTimeObj = analysis.crack_times_display.offline_fast_hashing_1e10_per_second;
+    
+    if (crackTimeObj) {
+      if (typeof crackTimeObj === 'string') {
+        crackTimeDisplay = crackTimeObj;
+      } else if (typeof crackTimeObj === 'number') {
+        crackTimeDisplay = formatCrackTime(crackTimeObj);
+      } else if (crackTimeObj.display) {
+        crackTimeDisplay = crackTimeObj.display;
+      } else {
+        crackTimeDisplay = 'unknown';
+      }
     }
   }
-}
 
-// Override for breached/common passwords
-if (breachResult.isBreached || commonWeakPasswords.includes(password.toLowerCase())) {
-  crackTimeDisplay = 'INSTANT (breached)';
-}
+  // Override for breached/common passwords
+  if (breachResult.isBreached || commonWeakPasswords.includes(password.toLowerCase())) {
+    crackTimeDisplay = 'INSTANT (breached)';
+  }
 
-meter.crackTimeValue.textContent = crackTimeDisplay;
+  meter.crackTimeValue.textContent = crackTimeDisplay;
   
   // Update breach status
   if (breachResult.isBreached) {
@@ -445,53 +444,6 @@ function updateFeedbackMessage(meter, analysis, breachResult, password) {
   else {
     meter.feedbackMessage.style.display = 'none';
   }
-}
-
-// ==================== REFRESH FUNCTION ====================
-
-function refreshMeterData(passwordField) {
-  console.log('🔄 Refresh button clicked, refreshing meter for field:', passwordField);
-  
-  // If no password field was provided, try to find one
-  if (!passwordField) {
-    console.log('⚠️ No password field provided, searching...');
-    const fields = findPasswordFields();
-    if (fields.length > 0) {
-      passwordField = fields[0];
-      console.log('✅ Found password field:', passwordField);
-    } else {
-      console.log('❌ No password fields found on page');
-      return;
-    }
-  }
-  
-  // Check if the field has a meter attached
-  if (!passwordField._passwordMeter) {
-    console.log('❌ Password field has no meter attached. Creating one...');
-    createPasswordMeter(passwordField);
-    // Give it a moment to initialize
-    setTimeout(() => {
-      if (passwordField.value) {
-        analyzePassword(passwordField, passwordField.value);
-      }
-    }, 100);
-    return;
-  }
-  
-  // Get current password
-  const password = passwordField.value;
-  console.log('🔍 Current password length:', password.length);
-  
-  if (!password || password.length === 0) {
-    console.log('📪 Password empty, hiding meter');
-    passwordField._passwordMeter.container.style.display = 'none';
-    return;
-  }
-  
-  // Show meter and run fresh analysis
-  console.log('📊 Running fresh analysis...');
-  passwordField._passwordMeter.container.style.display = 'block';
-  analyzePassword(passwordField, password);
 }
 
 // ==================== UI CREATION FUNCTIONS ====================
@@ -690,35 +642,12 @@ function createPasswordMeter(passwordField) {
     display: none;
   `;
   
-  // Buttons
+  // Buttons - ONLY Details button (Refresh removed)
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = `
     display: flex;
     gap: 12px;
   `;
-  
-  const refreshBtn = document.createElement('button');
-  refreshBtn.textContent = '↻ Refresh';
-  refreshBtn.style.cssText = `
-    flex: 1;
-    padding: 12px;
-    background: #e9ecef;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-  `;
-  refreshBtn.addEventListener('mouseenter', () => {
-    refreshBtn.style.background = '#dee2e6';
-  });
-  refreshBtn.addEventListener('mouseleave', () => {
-    refreshBtn.style.background = '#e9ecef';
-  });
-  refreshBtn.addEventListener('click', () => {
-    refreshMeterData(passwordField);
-  });
   
   const detailsBtn = document.createElement('button');
   detailsBtn.textContent = '📋 Details';
@@ -744,7 +673,6 @@ function createPasswordMeter(passwordField) {
     showDetailedAnalysis(passwordField);
   });
   
-  buttonContainer.appendChild(refreshBtn);
   buttonContainer.appendChild(detailsBtn);
   
   // Assemble content
@@ -975,4 +903,4 @@ const observer = new MutationObserver(() => {
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
-console.log("✅ Password analyzer ready!");s
+console.log("✅ Password analyzer ready!");
