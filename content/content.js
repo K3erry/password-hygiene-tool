@@ -306,20 +306,24 @@ async function analyzePassword(passwordField, password) {
   meter.breachStatusValue.style.background = '#e9ecef';
   meter.breachStatusValue.style.color = '#495057';
   
-  // Run analysis
+  // Run zxcvbn analysis
   let score, analysis;
   if (typeof zxcvbn !== 'undefined') {
     analysis = zxcvbn(password);
     score = analysis.score;
     console.log('🔐 zxcvbn analysis:', {
       score: score,
-      crackTime: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second || 'unknown'
+      crackTime: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second,
+      crackTimeDisplay: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second?.display,
+      warnings: analysis.feedback?.warning,
+      suggestions: analysis.feedback?.suggestions
     });
   } else {
     score = Math.min(4, Math.floor(password.length / 3));
     analysis = { 
-      crack_times_display: { offline_fast_hashing_1e10_per_second: 'unknown' },
-      feedback: { warning: '', suggestions: [] }
+      crack_times_display: { offline_fast_hashing_1e10_per_second: { display: 'unknown' } },
+      feedback: { warning: '', suggestions: [] },
+      score: score
     };
   }
   
@@ -327,27 +331,39 @@ async function analyzePassword(passwordField, password) {
   const breachResult = await checkBreach(password);
   console.log('🔐 Breach result:', breachResult);
   
-  // Determine final score (override if breached)
+  // ========== FIX: DO NOT OVERRIDE SCORE UNLESS ACTUALLY BREACHED ==========
+  // Only override if password is actually in a data breach
   let finalScore = score;
   let finalStrengthData = getStrengthData(score);
   
+  // List of EXTREMELY common weak passwords - these should override
+  // But "MyStrongP@ssw0rd2024!" is NOT in this list!
   const commonWeakPasswords = [
     '123456', '12345678', 'password', '123456789', '12345', 
     '1234567', 'password1', '1234567890', '123123', '0',
     '111111', 'abc123', 'qwerty', 'admin', 'letmein', 'welcome'
   ];
   
+  // ONLY override if breached OR extremely common weak password
   if (breachResult.isBreached) {
-    console.log('🚨 Password breached - forcing score to 0');
+    console.log('🚨 Password breached - forcing score to 0 (Very Weak)');
     finalScore = 0;
     finalStrengthData = getStrengthData(0);
-  } else if (commonWeakPasswords.includes(password.toLowerCase())) {
-    console.log('⚠️ Common weak password - forcing score to 0');
+  } 
+  // Check if it's in the common weak passwords list (exact match)
+  else if (commonWeakPasswords.includes(password.toLowerCase())) {
+    console.log('⚠️ Common weak password detected - forcing score to 0');
     finalScore = 0;
     finalStrengthData = getStrengthData(0);
   }
+  // Otherwise, keep the score from zxcvbn (which is accurate)
+  else {
+    console.log('✅ Using zxcvbn score:', score);
+    finalScore = score;
+    finalStrengthData = getStrengthData(score);
+  }
   
-  // Update UI
+  // Update UI with correct score
   const widthPercent = (finalScore + 1) * 20;
   
   meter.strengthLabel.textContent = finalStrengthData.name;
@@ -367,30 +383,32 @@ async function analyzePassword(passwordField, password) {
   
   meter.lengthValue.textContent = password.length;
   
-  // Format crack time 
+  // ========== FIX: Properly extract crack time ==========
   let crackTimeDisplay = 'unknown';
-
+  
   if (analysis && analysis.crack_times_display) {
-    const crackTimeObj = analysis.crack_times_display.offline_fast_hashing_1e10_per_second;
+    const crackData = analysis.crack_times_display.offline_fast_hashing_1e10_per_second;
     
-    if (crackTimeObj) {
-      if (typeof crackTimeObj === 'string') {
-        crackTimeDisplay = crackTimeObj;
-      } else if (typeof crackTimeObj === 'number') {
-        crackTimeDisplay = formatCrackTime(crackTimeObj);
-      } else if (crackTimeObj.display) {
-        crackTimeDisplay = crackTimeObj.display;
+    if (crackData) {
+      if (typeof crackData === 'string') {
+        crackTimeDisplay = crackData;
+      } else if (typeof crackData === 'number') {
+        crackTimeDisplay = formatCrackTime(crackData);
+      } else if (crackData.display) {
+        // This is the correct format from zxcvbn
+        crackTimeDisplay = crackData.display;
       } else {
         crackTimeDisplay = 'unknown';
       }
     }
   }
-
-  // Override for breached/common passwords
-  if (breachResult.isBreached || commonWeakPasswords.includes(password.toLowerCase())) {
+  
+  // Only override crack time for breached passwords
+  if (breachResult.isBreached) {
     crackTimeDisplay = 'INSTANT (breached)';
   }
-
+  
+  console.log('📊 Crack time display:', crackTimeDisplay);
   meter.crackTimeValue.textContent = crackTimeDisplay;
   
   // Update breach status
@@ -411,7 +429,6 @@ async function analyzePassword(passwordField, password) {
   // Update feedback message
   updateFeedbackMessage(meter, analysis, breachResult, password);
 }
-
 function updateFeedbackMessage(meter, analysis, breachResult, password) {
   const commonWeakPasswords = [
     '123456', '12345678', 'password', '123456789', '12345'
@@ -429,7 +446,7 @@ function updateFeedbackMessage(meter, analysis, breachResult, password) {
     meter.feedbackMessage.style.borderLeftColor = '#dc3545';
     meter.feedbackMessage.style.display = 'block';
   }
-  else if (analysis?.feedback?.warning) {
+  else if (analysis?.feedback?.warning && analysis.feedback.warning !== '') {
     meter.feedbackMessage.textContent = `⚠️ ${analysis.feedback.warning}`;
     meter.feedbackMessage.style.background = '#fff5f5';
     meter.feedbackMessage.style.borderLeftColor = '#dc3545';
@@ -445,7 +462,6 @@ function updateFeedbackMessage(meter, analysis, breachResult, password) {
     meter.feedbackMessage.style.display = 'none';
   }
 }
-
 // ==================== UI CREATION FUNCTIONS ====================
 
 function createPasswordMeter(passwordField) {
