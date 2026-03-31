@@ -311,13 +311,9 @@ async function analyzePassword(passwordField, password) {
   if (typeof zxcvbn !== 'undefined') {
     analysis = zxcvbn(password);
     score = analysis.score;
-    console.log('🔐 zxcvbn analysis:', {
-      score: score,
-      crackTime: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second,
-      crackTimeDisplay: analysis.crack_times_display?.offline_fast_hashing_1e10_per_second?.display,
-      warnings: analysis.feedback?.warning,
-      suggestions: analysis.feedback?.suggestions
-    });
+    console.log('🔐 zxcvbn analysis FULL OBJECT:', analysis);
+    console.log('🔐 Crack times object:', analysis.crack_times_display);
+    console.log('🔐 Offline crack time raw:', analysis.crack_times_display?.offline_fast_hashing_1e10_per_second);
   } else {
     score = Math.min(4, Math.floor(password.length / 3));
     analysis = { 
@@ -331,39 +327,14 @@ async function analyzePassword(passwordField, password) {
   const breachResult = await checkBreach(password);
   console.log('🔐 Breach result:', breachResult);
   
-  // ========== FIX: DO NOT OVERRIDE SCORE UNLESS ACTUALLY BREACHED ==========
-  // Only override if password is actually in a data breach
+  // Use the ORIGINAL score from zxcvbn - DO NOT override
   let finalScore = score;
   let finalStrengthData = getStrengthData(score);
   
-  // List of EXTREMELY common weak passwords - these should override
-  // But "MyStrongP@ssw0rd2024!" is NOT in this list!
-  const commonWeakPasswords = [
-    '123456', '12345678', 'password', '123456789', '12345', 
-    '1234567', 'password1', '1234567890', '123123', '0',
-    '111111', 'abc123', 'qwerty', 'admin', 'letmein', 'welcome'
-  ];
+  // Only show breach warning, but don't change strength score
+  // A password can be strong AND breached (it was someone else's strong password that got leaked)
   
-  // ONLY override if breached OR extremely common weak password
-  if (breachResult.isBreached) {
-    console.log('🚨 Password breached - forcing score to 0 (Very Weak)');
-    finalScore = 0;
-    finalStrengthData = getStrengthData(0);
-  } 
-  // Check if it's in the common weak passwords list (exact match)
-  else if (commonWeakPasswords.includes(password.toLowerCase())) {
-    console.log('⚠️ Common weak password detected - forcing score to 0');
-    finalScore = 0;
-    finalStrengthData = getStrengthData(0);
-  }
-  // Otherwise, keep the score from zxcvbn (which is accurate)
-  else {
-    console.log('✅ Using zxcvbn score:', score);
-    finalScore = score;
-    finalStrengthData = getStrengthData(score);
-  }
-  
-  // Update UI with correct score
+  // Update UI
   const widthPercent = (finalScore + 1) * 20;
   
   meter.strengthLabel.textContent = finalStrengthData.name;
@@ -383,39 +354,48 @@ async function analyzePassword(passwordField, password) {
   
   meter.lengthValue.textContent = password.length;
   
-  // ========== FIX: Properly extract crack time ==========
+  // ========== CRACK TIME EXTRACTION - FIXED ==========
   let crackTimeDisplay = 'unknown';
   
   if (analysis && analysis.crack_times_display) {
+    // Get the offline crack time object
     const crackData = analysis.crack_times_display.offline_fast_hashing_1e10_per_second;
     
+    console.log('📊 Raw crack data:', crackData);
+    console.log('📊 Type of crack data:', typeof crackData);
+    
     if (crackData) {
+      // Try different formats that zxcvbn might return
       if (typeof crackData === 'string') {
         crackTimeDisplay = crackData;
-      } else if (typeof crackData === 'number') {
+      } 
+      else if (typeof crackData === 'number') {
         crackTimeDisplay = formatCrackTime(crackData);
-      } else if (crackData.display) {
-        // This is the correct format from zxcvbn
+      }
+      else if (crackData.display) {
+        // This is the standard zxcvbn format
         crackTimeDisplay = crackData.display;
-      } else {
-        crackTimeDisplay = 'unknown';
+        console.log('✅ Found .display property:', crackTimeDisplay);
+      }
+      else if (crackData.text) {
+        crackTimeDisplay = crackData.text;
+      }
+      else {
+        // Last resort: try to stringify
+        crackTimeDisplay = String(crackData);
       }
     }
   }
   
-  // Only override crack time for breached passwords
-  if (breachResult.isBreached) {
-    crackTimeDisplay = 'INSTANT (breached)';
-  }
-  
-  console.log('📊 Crack time display:', crackTimeDisplay);
+  console.log('📊 FINAL crack time display:', crackTimeDisplay);
   meter.crackTimeValue.textContent = crackTimeDisplay;
   
-  // Update breach status
+  // Update breach status (shows warning but doesn't affect strength)
   if (breachResult.isBreached) {
-    meter.breachStatusValue.textContent = `❌ BREACHED (${breachResult.count})`;
-    meter.breachStatusValue.style.background = '#dc3545';
-    meter.breachStatusValue.style.color = 'white';
+    meter.breachStatusValue.textContent = `⚠️ BREACHED (${breachResult.count})`;
+    meter.breachStatusValue.style.background = '#ffc107';
+    meter.breachStatusValue.style.color = '#495057';
+    console.log('⚠️ Password is breached but strength remains', finalScore);
   } else if (breachResult.error) {
     meter.breachStatusValue.textContent = '⚠️ CHECK FAILED';
     meter.breachStatusValue.style.background = '#ffc107';
@@ -573,16 +553,16 @@ function createPasswordMeter(passwordField) {
   const securityLevelSection = document.createElement('div');
   securityLevelSection.style.cssText = `margin-bottom: 20px;`;
   
-  const securityLevelHeader = document.createElement('div');
-  securityLevelHeader.style.cssText = `
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: #6c757d;
-  `;
-  securityLevelHeader.innerHTML = '<span>Security Level</span><span class="security-value">0/4</span>';
-  
+  // Make sure the security value is correctly set
+const securityLevelHeader = document.createElement('div');
+securityLevelHeader.style.cssText = `
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #6c757d;
+`;
+securityLevelHeader.innerHTML = '<span>Security Level</span><span class="security-value">0/4</span>';
   const progressBar = document.createElement('div');
   progressBar.style.cssText = `
     width: 100%;
